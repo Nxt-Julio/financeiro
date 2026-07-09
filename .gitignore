@@ -1,0 +1,19 @@
+# Banco local (NÃO subir dados pessoais para o GitHub)
+finance.db
+finance.db.bak-*
+
+# Segredos (connection string do Postgres etc.) — NUNCA commitar
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Artefatos internos do opensquad / logs de trabalho (não fazem parte do app,
+# e alguns contêm valores/nomes reais dos testes)
+_opensquad/
+_memory/
+AGENTS.md
+projects/

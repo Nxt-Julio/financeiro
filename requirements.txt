@@ -1,0 +1,7 @@
+streamlit
+pandas
+plotly
+python-dateutil
+pdfplumber
+SQLAlchemy>=2.0
+psycopg2-binary

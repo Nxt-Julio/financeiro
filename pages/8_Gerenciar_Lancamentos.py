@@ -1,0 +1,140 @@
+import datetime
+
+import pandas as pd
+import streamlit as st
+
+from database import (
+    ORIGENS,
+    TIPOS,
+    atualizar_transacao,
+    excluir_transacao,
+    fetch_transacoes,
+    get_responsaveis,
+    init_db,
+)
+from utils.ui import page_header, setup_page
+
+setup_page("Gerenciar Lançamentos", "🗂️")
+init_db()
+
+page_header(
+    "Gerenciar Lançamentos",
+    "Edite categorias e outros campos direto na tabela, ou marque linhas para excluir. "
+    "As correções refletem imediatamente nos dashboards.",
+    "🗂️",
+)
+
+transacoes = fetch_transacoes()
+
+if not transacoes:
+    st.info("Nenhum lançamento cadastrado ainda.")
+    st.stop()
+
+df = pd.DataFrame(transacoes)
+df["data"] = pd.to_datetime(df["data"]).dt.date
+
+responsaveis = get_responsaveis()
+
+# ---------- Filtros ----------
+with st.expander("🔎 Filtros", expanded=False):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        filtro_resp = st.multiselect("Responsável", responsaveis, default=[])
+    with col2:
+        filtro_tipo = st.multiselect("Tipo", TIPOS, default=[])
+    with col3:
+        busca = st.text_input("Buscar na descrição/categoria", "")
+
+df_filtrado = df.copy()
+if filtro_resp:
+    df_filtrado = df_filtrado[df_filtrado["responsavel"].isin(filtro_resp)]
+if filtro_tipo:
+    df_filtrado = df_filtrado[df_filtrado["tipo"].isin(filtro_tipo)]
+if busca.strip():
+    termo = busca.strip().lower()
+    mask = (
+        df_filtrado["descricao_original"].fillna("").str.lower().str.contains(termo)
+        | df_filtrado["categoria"].fillna("").str.lower().str.contains(termo)
+    )
+    df_filtrado = df_filtrado[mask]
+
+st.caption(f"{len(df_filtrado)} de {len(df)} lançamentos exibidos.")
+
+# ---------- Tabela editável ----------
+# Snapshot pré-edição (indexado por id) para reconciliar as mudanças ao salvar.
+original_por_id = df_filtrado.set_index("id").to_dict("index")
+
+df_editor = df_filtrado.copy()
+df_editor.insert(0, "Excluir", False)
+
+# Opções de categoria: as já existentes + as presentes no recorte atual.
+categorias_existentes = sorted(
+    {c for c in df["categoria"].dropna().unique() if str(c).strip()}
+)
+
+edited = st.data_editor(
+    df_editor,
+    use_container_width=True,
+    hide_index=True,
+    num_rows="fixed",
+    column_order=[
+        "Excluir", "data", "descricao_original", "estabelecimento",
+        "categoria", "valor", "tipo", "responsavel", "origem",
+    ],
+    column_config={
+        "id": None,
+        "id_parcelamento": None,
+        "Excluir": st.column_config.CheckboxColumn("Excluir", width="small"),
+        "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+        "descricao_original": st.column_config.TextColumn("Descrição"),
+        "estabelecimento": st.column_config.TextColumn("Estabelecimento"),
+        "categoria": st.column_config.TextColumn(
+            "Categoria",
+            help="Digite ou padronize a categoria. Existentes: " + ", ".join(categorias_existentes[:20]),
+        ),
+        "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
+        "tipo": st.column_config.SelectboxColumn("Tipo", options=TIPOS),
+        "responsavel": st.column_config.SelectboxColumn("Responsável", options=responsaveis),
+        "origem": st.column_config.SelectboxColumn("Origem", options=ORIGENS),
+    },
+    key="editor_lancamentos",
+)
+
+if st.button("💾 Salvar alterações", type="primary"):
+    campos = ["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem"]
+    n_editados = 0
+    n_excluidos = 0
+
+    for _, linha in edited.iterrows():
+        id_transacao = int(linha["id"])
+
+        if linha["Excluir"]:
+            excluir_transacao(id_transacao)
+            n_excluidos += 1
+            continue
+
+        original = original_por_id.get(id_transacao, {})
+        alteracoes = {}
+        for campo in campos:
+            novo = linha[campo]
+            antigo = original.get(campo)
+
+            if campo == "data":
+                novo = novo.isoformat() if hasattr(novo, "isoformat") else str(novo)
+                antigo = antigo.isoformat() if hasattr(antigo, "isoformat") else str(antigo)
+            elif campo == "valor":
+                novo = round(float(novo), 2)
+                antigo = round(float(antigo), 2)
+
+            if novo != antigo:
+                alteracoes[campo] = novo
+
+        if alteracoes:
+            atualizar_transacao(id_transacao, alteracoes)
+            n_editados += 1
+
+    if n_editados or n_excluidos:
+        st.success(f"{n_editados} lançamento(s) atualizado(s) e {n_excluidos} excluído(s).")
+        st.rerun()
+    else:
+        st.info("Nenhuma alteração para salvar.")
