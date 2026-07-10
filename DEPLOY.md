@@ -47,12 +47,20 @@ responsável. Você reconfigura os nomes depois em ⚙️ Configurações.
 
 1. Acesse https://share.streamlit.io e faça login com o GitHub.
 2. **New app** → selecione o repositório, o branch `main` e o arquivo principal `app.py`.
-3. Em **Advanced settings → Secrets**, cole (com a URL real do passo 1):
+3. Em **Advanced settings → Secrets**, cole (com a URL real do passo 1 e uma senha
+   forte de acesso ao app):
    ```toml
+   [auth]
+   password = "SUA_SENHA_FORTE_DE_ACESSO"
+
    [database]
    url = "postgresql://usuario:senha@host:5432/banco?sslmode=require"
    ```
 4. **Deploy**. Na primeira execução o app cria as tabelas no Postgres.
+
+> **Importante (login):** o app tem um portão de senha (`[auth] password`). Sem esse
+> secret configurado, o app fica **bloqueado** (fail-closed). Configure-o nos Secrets
+> do Streamlit Cloud (e no `.streamlit/secrets.toml` local) antes/junto com o deploy.
 
 ## 4. 🧑 Deixar o app privado (importante — dados pessoais)
 

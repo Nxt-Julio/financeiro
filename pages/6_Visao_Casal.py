@@ -4,8 +4,10 @@ import streamlit as st
 
 from database import fetch_transacoes, init_db
 from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page, style_fig
+from utils.auth import require_login
 
 setup_page("Visão Casal", "👫")
+require_login()
 init_db()
 
 page_header("Visão Casal", "Receita e despesa de cada responsável, lado a lado.", "👫")

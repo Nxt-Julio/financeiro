@@ -11,8 +11,10 @@ from database import (
 )
 
 from utils.ui import page_header, setup_page
+from utils.auth import require_login
 
 setup_page("Lançamento Manual", "✍️")
+require_login()
 init_db()
 
 page_header(

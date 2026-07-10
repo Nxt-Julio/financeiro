@@ -13,8 +13,10 @@ from database import (
     init_db,
 )
 from utils.ui import page_header, setup_page
+from utils.auth import require_login
 
 setup_page("Gerenciar Lançamentos", "🗂️")
+require_login()
 init_db()
 
 page_header(

@@ -3,8 +3,10 @@ import streamlit as st
 from database import get_responsaveis, init_db, inserir_transacao
 from utils.payslip_parser import extrair_texto_pdf, parse_holerite
 from utils.ui import page_header, setup_page
+from utils.auth import require_login
 
 setup_page("Leitura de Holerite", "📄")
+require_login()
 init_db()
 
 page_header(

@@ -4,8 +4,10 @@ import pandas as pd
 
 from database import fetch_parcelamentos, fetch_transacoes, init_db
 from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page
+from utils.auth import require_login
 
 setup_page("Gestão Financeira Pessoal", "💰")
+require_login()
 init_db()
 
 page_header(
@@ -50,29 +52,26 @@ import streamlit as st
 
 st.subheader("Módulos")
 
-# (emoji, título, descrição, slug da página — a rota é o nome do arquivo em
-# pages/ sem o prefixo numérico, ex: 1_Parcelamentos.py -> /Parcelamentos)
+# (emoji, título, descrição, caminho do arquivo da página). Usamos st.page_link
+# (navegação nativa) para preservar a sessão de login ao clicar — links comuns
+# recarregam a página inteira e derrubariam o login.
 SECOES = [
-    ("🧾", "Parcelamentos", "Registre compras parceladas e gere as parcelas futuras automaticamente.", "Parcelamentos"),
-    ("📊", "Visão Geral", "Distribuição de despesas por categoria e lista de transações.", "Visao_Geral"),
-    ("🗂️", "Gerenciar Lançamentos", "Edite categorias e campos, ou exclua lançamentos.", "Gerenciar_Lancamentos"),
-    ("✍️", "Lançamento Manual", "Registre receitas e despesas avulsas em dinheiro.", "Lancamento_Manual"),
-    ("📄", "Leitura de Holerite", "Importe o holerite em PDF e lance o salário líquido.", "Leitura_Holerite"),
-    ("📑", "Leitura de Extrato", "Importe a fatura/extrato em PDF com categorização automática.", "Leitura_Extrato"),
-    ("👫", "Visão Casal", "Compare receita e despesa de cada responsável.", "Visao_Casal"),
-    ("📈", "Projeção Futura", "Veja os gastos já comprometidos nos próximos meses.", "Projecao_Futura"),
-    ("⚙️", "Configurações", "Personalize os nomes dos responsáveis.", "Configuracoes"),
+    ("🧾", "Parcelamentos", "Registre compras parceladas e gere as parcelas futuras automaticamente.", "pages/1_Parcelamentos.py"),
+    ("📊", "Visão Geral", "Distribuição de despesas por categoria e lista de transações.", "pages/2_Visao_Geral.py"),
+    ("🗂️", "Gerenciar Lançamentos", "Edite categorias e campos, ou exclua lançamentos.", "pages/8_Gerenciar_Lancamentos.py"),
+    ("✍️", "Lançamento Manual", "Registre receitas e despesas avulsas em dinheiro.", "pages/3_Lancamento_Manual.py"),
+    ("📄", "Leitura de Holerite", "Importe o holerite em PDF e lance o salário líquido.", "pages/4_Leitura_Holerite.py"),
+    ("📑", "Leitura de Extrato", "Importe a fatura/extrato em PDF com categorização automática.", "pages/5_Leitura_Extrato.py"),
+    ("👫", "Visão Casal", "Compare receita e despesa de cada responsável.", "pages/6_Visao_Casal.py"),
+    ("📈", "Projeção Futura", "Veja os gastos já comprometidos nos próximos meses.", "pages/7_Projecao_Futura.py"),
+    ("⚙️", "Configurações", "Personalize os nomes dos responsáveis.", "pages/0_Configuracoes.py"),
 ]
 
 cols = st.columns(4)
-for i, (emoji, titulo, desc, slug) in enumerate(SECOES):
+for i, (emoji, titulo, desc, page_path) in enumerate(SECOES):
     with cols[i % 4]:
-        st.markdown(
-            f'<a class="nav-card" href="/{slug}" target="_self">'
-            f'<span class="nav-emoji">{emoji}</span>'
-            f'<span class="nav-title">{titulo}</span>'
-            f'<span class="nav-desc">{desc}</span></a>',
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            st.page_link(page_path, label=f"**{emoji} {titulo}**")
+            st.caption(desc)
 
-st.caption("Use o menu à esquerda para navegar entre os módulos.")
+st.caption("Ou use o menu à esquerda para navegar entre os módulos.")

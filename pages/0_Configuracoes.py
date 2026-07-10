@@ -2,8 +2,10 @@ import streamlit as st
 
 from database import atualizar_responsavel, get_responsaveis, init_db
 from utils.ui import page_header, setup_page
+from utils.auth import require_login
 
 setup_page("Configurações", "⚙️")
+require_login()
 init_db()
 
 page_header(
