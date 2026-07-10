@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Float,
     ForeignKey,
@@ -27,7 +28,9 @@ from sqlalchemy import (
     delete,
     func,
     insert,
+    inspect,
     select,
+    text,
     update,
 )
 from sqlalchemy.engine import Engine
@@ -44,7 +47,7 @@ SEED_REGRAS = [
 ]
 
 # Campos de uma transação que o usuário pode editar na tela de gerenciamento.
-CAMPOS_EDITAVEIS = ("data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem")
+CAMPOS_EDITAVEIS = ("data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago")
 
 
 def _database_url() -> str:
@@ -127,13 +130,25 @@ transacoes = Table(
     Column("responsavel", Text, nullable=False),
     Column("origem", Text, nullable=False),
     Column("id_parcelamento", Integer, ForeignKey("parcelamentos.id_origem")),
+    Column("pago", Boolean, nullable=False, default=False),
 )
+
+
+def _migrar_coluna_pago():
+    """Migração leve: adiciona a coluna `pago` em `transacoes` se ela ainda não
+    existir (para bancos criados antes desta coluna existir). Funciona em SQLite
+    e PostgreSQL. `false` é aceito como default booleano nos dois."""
+    colunas = [c["name"] for c in inspect(engine).get_columns("transacoes")]
+    if "pago" not in colunas:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE transacoes ADD COLUMN pago BOOLEAN NOT NULL DEFAULT false"))
 
 
 def init_db():
     """Cria as tabelas (se não existirem) e insere os dados semente (regras de
     categorização e nomes padrão de responsável)."""
     metadata.create_all(engine)
+    _migrar_coluna_pago()
 
     with engine.begin() as conn:
         total_regras = conn.execute(select(func.count()).select_from(regras_categorizacao)).scalar()

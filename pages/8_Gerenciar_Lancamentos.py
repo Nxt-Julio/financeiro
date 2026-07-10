@@ -37,14 +37,18 @@ df["data"] = pd.to_datetime(df["data"]).dt.date
 
 responsaveis = get_responsaveis()
 
+df["pago"] = df["pago"].fillna(False).astype(bool)
+
 # ---------- Filtros ----------
 with st.expander("🔎 Filtros", expanded=False):
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         filtro_resp = st.multiselect("Responsável", responsaveis, default=[])
     with col2:
         filtro_tipo = st.multiselect("Tipo", TIPOS, default=[])
     with col3:
+        filtro_status = st.selectbox("Status", ["Todos", "Pendentes", "Pagas"])
+    with col4:
         busca = st.text_input("Buscar na descrição/categoria", "")
 
 df_filtrado = df.copy()
@@ -52,6 +56,10 @@ if filtro_resp:
     df_filtrado = df_filtrado[df_filtrado["responsavel"].isin(filtro_resp)]
 if filtro_tipo:
     df_filtrado = df_filtrado[df_filtrado["tipo"].isin(filtro_tipo)]
+if filtro_status == "Pendentes":
+    df_filtrado = df_filtrado[~df_filtrado["pago"]]
+elif filtro_status == "Pagas":
+    df_filtrado = df_filtrado[df_filtrado["pago"]]
 if busca.strip():
     termo = busca.strip().lower()
     mask = (
@@ -60,7 +68,14 @@ if busca.strip():
     )
     df_filtrado = df_filtrado[mask]
 
-st.caption(f"{len(df_filtrado)} de {len(df)} lançamentos exibidos.")
+# Resumo pago/pendente das despesas do recorte atual
+despesas = df_filtrado[df_filtrado["tipo"] == "despesa"]
+total_pago = despesas.loc[despesas["pago"], "valor"].sum()
+total_pendente = despesas.loc[~despesas["pago"], "valor"].sum()
+c1, c2, c3 = st.columns(3)
+c1.metric("Lançamentos exibidos", f"{len(df_filtrado)} de {len(df)}")
+c2.metric("Despesas pagas", f"R$ {total_pago:,.2f}")
+c3.metric("Despesas pendentes", f"R$ {total_pendente:,.2f}")
 
 # ---------- Tabela editável ----------
 # Snapshot pré-edição (indexado por id) para reconciliar as mudanças ao salvar.
@@ -80,13 +95,14 @@ edited = st.data_editor(
     hide_index=True,
     num_rows="fixed",
     column_order=[
-        "Excluir", "data", "descricao_original", "estabelecimento",
+        "Excluir", "pago", "data", "descricao_original", "estabelecimento",
         "categoria", "valor", "tipo", "responsavel", "origem",
     ],
     column_config={
         "id": None,
         "id_parcelamento": None,
         "Excluir": st.column_config.CheckboxColumn("Excluir", width="small"),
+        "pago": st.column_config.CheckboxColumn("Pago", width="small", help="Marque as parcelas/lançamentos já quitados."),
         "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
         "descricao_original": st.column_config.TextColumn("Descrição"),
         "estabelecimento": st.column_config.TextColumn("Estabelecimento"),
@@ -103,7 +119,7 @@ edited = st.data_editor(
 )
 
 if st.button("💾 Salvar alterações", type="primary"):
-    campos = ["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem"]
+    campos = ["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago"]
     n_editados = 0
     n_excluidos = 0
 
@@ -127,6 +143,9 @@ if st.button("💾 Salvar alterações", type="primary"):
             elif campo == "valor":
                 novo = round(float(novo), 2)
                 antigo = round(float(antigo), 2)
+            elif campo == "pago":
+                novo = bool(novo)
+                antigo = bool(antigo)
 
             if novo != antigo:
                 alteracoes[campo] = novo

@@ -62,7 +62,7 @@ else:
         df_view,
         use_container_width=True,
         hide_index=True,
-        column_order=["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem"],
+        column_order=["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago"],
         column_config={
             "id": None,
             "id_parcelamento": None,
@@ -74,5 +74,6 @@ else:
             "tipo": st.column_config.TextColumn("Tipo"),
             "responsavel": st.column_config.TextColumn("Responsável"),
             "origem": st.column_config.TextColumn("Origem"),
+            "pago": st.column_config.CheckboxColumn("Pago", disabled=True),
         },
     )
