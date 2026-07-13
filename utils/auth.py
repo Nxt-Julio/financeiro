@@ -9,10 +9,21 @@ renderização (`st.stop()`), de modo que nenhum dado é exibido nem consultado.
 
 Comportamento **fail-closed**: se a senha não estiver configurada, o acesso é
 bloqueado (em vez de liberar tudo).
+
+**Exceção deliberada e restrita**: quando a variável de ambiente `FORCE_LOCAL_DB`
+está ativa (modo sandbox local, ver `database.py`), o login é pulado — só para
+facilitar testes no banco de dados clonado/local. Isso nunca afeta a produção:
+o Streamlit Cloud jamais define `FORCE_LOCAL_DB`, então esse desvio só existe
+quando alguém já rodou `iniciar_testes.bat` de propósito na própria máquina.
 """
 import hmac
+import os
 
 import streamlit as st
+
+
+def _modo_sandbox():
+    return os.getenv("FORCE_LOCAL_DB", "").lower() in ("1", "true", "yes")
 
 
 def _senha_configurada():
@@ -25,6 +36,12 @@ def _senha_configurada():
 
 def require_login():
     """Bloqueia a página até a sessão estar autenticada."""
+    if _modo_sandbox():
+        st.session_state["auth_ok"] = True
+        with st.sidebar:
+            st.warning("🧪 Modo sandbox — login desabilitado (dados de teste, não é produção).")
+        return
+
     if st.session_state.get("auth_ok"):
         _sidebar_logout()
         return
