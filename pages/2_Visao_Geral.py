@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from database import fetch_transacoes, init_db
+from utils.finance import filtrar_realizadas
 from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page, style_fig
 from utils.auth import require_login
 
@@ -18,18 +19,22 @@ if not transacoes:
     st.info("Nenhuma transação cadastrada ainda. Registre um lançamento ou parcelamento para começar.")
 else:
     df = pd.DataFrame(transacoes)
-    receita = df.loc[df["tipo"] == "receita", "valor"].sum()
-    despesa = df.loc[df["tipo"] == "despesa", "valor"].sum()
+    # KPIs e gráficos consideram só o que já foi realizado (data <= hoje ou já
+    # pago) — parcelas futuras ainda não pagas são compromisso, não gasto (ver
+    # Projeção Futura). A tabela completa mais abaixo continua mostrando tudo.
+    df_realizado = filtrar_realizadas(df)
+    receita = df_realizado.loc[df_realizado["tipo"] == "receita", "valor"].sum()
+    despesa = df_realizado.loc[df_realizado["tipo"] == "despesa", "valor"].sum()
 
     kpi_row([
-        {"label": "Receitas", "value": _fmt_brl(receita), "color": PALETTE["receita"]},
-        {"label": "Despesas", "value": _fmt_brl(despesa), "color": PALETTE["despesa"]},
+        {"label": "Receitas", "value": _fmt_brl(receita), "color": PALETTE["receita"], "sub": "Já recebidas"},
+        {"label": "Despesas", "value": _fmt_brl(despesa), "color": PALETTE["despesa"], "sub": "Já incorridas ou pagas"},
         {"label": "Saldo", "value": _fmt_brl(receita - despesa),
          "color": PALETTE["receita"] if receita - despesa >= 0 else PALETTE["despesa"]},
-        {"label": "Transações", "value": str(len(df)), "color": PALETTE["accent"]},
+        {"label": "Transações", "value": str(len(df)), "color": PALETTE["accent"], "sub": "Total lançado (todas)"},
     ])
 
-    despesas = df[df["tipo"] == "despesa"]
+    despesas = df_realizado[df_realizado["tipo"] == "despesa"]
 
     col_esq, col_dir = st.columns([3, 2])
 

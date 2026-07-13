@@ -1,6 +1,8 @@
+import datetime
+
 import streamlit as st
 
-from database import get_responsaveis, init_db, inserir_transacao
+from database import atualizar_transacao, fetch_parcelas_pendentes, get_responsaveis, init_db, inserir_transacao
 from utils.payslip_parser import extrair_texto_pdf, parse_holerite
 from utils.ui import page_header, setup_page
 from utils.auth import require_login
@@ -45,6 +47,23 @@ if dados:
     st.write("Confira os valores acima antes de salvar. Se algo estiver incorreto, "
              "verifique se o PDF enviado é um holerite compatível.")
 
+    # Parcelas ainda não pagas — para vincular ao holerite quando o desconto do
+    # holerite (ex: "Desconto Antecipação Salarial") já corresponde a uma
+    # parcela de um parcelamento cadastrado. Evita contar a mesma saída de
+    # dinheiro duas vezes (uma no salário líquido menor, outra na parcela).
+    pendentes = fetch_parcelas_pendentes()
+    opcoes_parcela = {"— Nenhuma —": None}
+    for p in pendentes:
+        try:
+            venc = datetime.date.fromisoformat(str(p["data_vencimento"])).strftime("%d/%m/%Y")
+        except ValueError:
+            venc = p["data_vencimento"]
+        rotulo = (
+            f"{p['descricao']} — parcela {p['parcela_atual']}/{p['total_parcelas']} "
+            f"— R$ {p['valor_parcela']:.2f} — venc. {venc}"
+        )
+        opcoes_parcela[rotulo] = p["transacao_id"]
+
     with st.form("form_holerite"):
         responsavel = st.selectbox("Responsável (dono do holerite)", get_responsaveis())
         estabelecimento = st.text_input(
@@ -54,6 +73,14 @@ if dados:
         )
         st.text_input("Origem", value="Conta", disabled=True)
         st.text_input("Tipo", value="receita", disabled=True)
+
+        rotulo_selecionado = st.selectbox(
+            "Este holerite já desconta alguma parcela em aberto? (opcional)",
+            list(opcoes_parcela.keys()),
+            help="Se o desconto do holerite (ex: antecipação salarial) já corresponde a uma "
+                 "parcela cadastrada em Parcelamentos, selecione-a aqui para marcá-la como "
+                 "paga junto com o lançamento do salário — evita contar a mesma despesa duas vezes.",
+        )
 
         confirmar = st.form_submit_button("Confirmar e salvar")
 
@@ -69,8 +96,15 @@ if dados:
             origem="Conta",
         )
 
-        st.success(
+        transacao_parcela_id = opcoes_parcela[rotulo_selecionado]
+        if transacao_parcela_id is not None:
+            atualizar_transacao(transacao_parcela_id, {"pago": True})
+
+        mensagem = (
             f"Salário líquido de R$ {dados['salario_liquido']:.2f} "
             f"referente a {dados['mes_referencia']} lançado para {responsavel} com sucesso!"
         )
+        if transacao_parcela_id is not None:
+            mensagem += " A parcela selecionada foi marcada como paga."
+        st.success(mensagem)
         st.session_state.holerite_dados = None

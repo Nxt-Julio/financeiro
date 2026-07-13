@@ -338,9 +338,43 @@ def criar_parcelamento(descricao, categoria, responsavel, origem, parcelas):
 
 
 def fetch_parcelamentos():
+    """Retorna as parcelas com o status `pago` já resolvido (lido da transação
+    vinculada), para que dashboards como a Projeção Futura possam excluir
+    parcelas já quitadas do que ainda está "por vir"."""
     with engine.connect() as conn:
         rows = conn.execute(
-            select(parcelamentos).order_by(parcelamentos.c.grupo_id, parcelamentos.c.parcela_atual)
+            select(
+                parcelamentos,
+                func.coalesce(transacoes.c.pago, False).label("pago"),
+            )
+            .select_from(
+                parcelamentos.outerjoin(transacoes, transacoes.c.id_parcelamento == parcelamentos.c.id_origem)
+            )
+            .order_by(parcelamentos.c.grupo_id, parcelamentos.c.parcela_atual)
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def fetch_parcelas_pendentes():
+    """Parcelas ainda não pagas, para vincular (ex: a um holerite que já desconta
+    aquela parcela) e marcá-las como pagas de uma vez. Retorna lista de dicts:
+    transacao_id (o id em `transacoes`, usado com atualizar_transacao), descricao,
+    parcela_atual, total_parcelas, data_vencimento, valor_parcela — por vencimento."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                transacoes.c.id.label("transacao_id"),
+                parcelamentos.c.descricao,
+                parcelamentos.c.parcela_atual,
+                parcelamentos.c.total_parcelas,
+                parcelamentos.c.data_vencimento,
+                parcelamentos.c.valor_parcela,
+            )
+            .select_from(
+                parcelamentos.join(transacoes, transacoes.c.id_parcelamento == parcelamentos.c.id_origem)
+            )
+            .where(func.coalesce(transacoes.c.pago, False).is_(False))
+            .order_by(parcelamentos.c.data_vencimento)
         ).mappings().all()
     return [dict(r) for r in rows]
 

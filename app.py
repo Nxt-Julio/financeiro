@@ -3,6 +3,7 @@ import datetime
 import pandas as pd
 
 from database import fetch_parcelamentos, fetch_transacoes, init_db
+from utils.finance import filtrar_realizadas
 from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page
 from utils.auth import require_login
 
@@ -20,31 +21,38 @@ transacoes = fetch_transacoes()
 parcelamentos = fetch_parcelamentos()
 
 # ---------- KPIs de visão geral ----------
+# "Despesas"/"Saldo" contam só o que já foi REALIZADO (data <= hoje ou já pago) —
+# parcelas futuras ainda não pagas são compromisso, não gasto, e ficam de fora
+# daqui (aparecem em "Parcelas futuras" e na Projeção Futura).
+hoje = datetime.date.today()
+
 if transacoes:
     df = pd.DataFrame(transacoes)
-    total_receita = df.loc[df["tipo"] == "receita", "valor"].sum()
-    total_despesa = df.loc[df["tipo"] == "despesa", "valor"].sum()
+    df_realizado = filtrar_realizadas(df, hoje)
+    total_receita = df_realizado.loc[df_realizado["tipo"] == "receita", "valor"].sum()
+    total_despesa = df_realizado.loc[df_realizado["tipo"] == "despesa", "valor"].sum()
     saldo = total_receita - total_despesa
 else:
     total_receita = total_despesa = saldo = 0.0
 
-hoje = datetime.date.today()
 comprometido_futuro = 0.0
 if parcelamentos:
     dfp = pd.DataFrame(parcelamentos)
     dfp["venc"] = pd.to_datetime(dfp["data_vencimento"])
-    comprometido_futuro = dfp.loc[dfp["venc"] >= pd.Timestamp(hoje), "valor_parcela"].sum()
+    dfp["pago"] = dfp["pago"].fillna(False).astype(bool)
+    pendente = dfp[(dfp["venc"] >= pd.Timestamp(hoje)) & (~dfp["pago"])]
+    comprometido_futuro = pendente["valor_parcela"].sum()
 
 kpi_row([
     {"label": "Receitas", "value": _fmt_brl(total_receita), "color": PALETTE["receita"],
-     "sub": "Total lançado"},
+     "sub": "Já recebidas"},
     {"label": "Despesas", "value": _fmt_brl(total_despesa), "color": PALETTE["despesa"],
-     "sub": "Total lançado"},
+     "sub": "Já incorridas ou pagas"},
     {"label": "Saldo", "value": _fmt_brl(saldo),
      "color": PALETTE["receita"] if saldo >= 0 else PALETTE["despesa"],
-     "sub": "Receitas − Despesas"},
+     "sub": "Receitas − Despesas (já realizadas)"},
     {"label": "Parcelas futuras", "value": _fmt_brl(comprometido_futuro),
-     "color": PALETTE["accent"], "sub": "Comprometido a partir de hoje"},
+     "color": PALETTE["accent"], "sub": "Ainda não pagas, a partir de hoje"},
 ])
 
 # ---------- Cards de navegação ----------

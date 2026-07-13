@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from database import fetch_transacoes, init_db
+from utils.finance import filtrar_realizadas
 from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page, style_fig
 from utils.auth import require_login
 
@@ -18,8 +19,11 @@ if not transacoes:
     st.info("Nenhuma transação cadastrada ainda. Registre um lançamento para começar.")
 else:
     df = pd.DataFrame(transacoes)
+    # Considera só o que já foi realizado (data <= hoje ou já pago) — parcelas
+    # futuras ainda não pagas são compromisso, não gasto (ver Projeção Futura).
+    df_realizado = filtrar_realizadas(df)
 
-    resumo = df.groupby(["responsavel", "tipo"])["valor"].sum().reset_index()
+    resumo = df_realizado.groupby(["responsavel", "tipo"])["valor"].sum().reset_index()
 
     pivot = resumo.pivot_table(
         index="responsavel", columns="tipo", values="valor", aggfunc="sum", fill_value=0
