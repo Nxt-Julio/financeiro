@@ -51,6 +51,14 @@ CAMPOS_EDITAVEIS = ("data", "descricao_original", "estabelecimento", "categoria"
 
 
 def _database_url() -> str:
+    # 0) Modo de testes forçado: ignora qualquer secret/credencial e usa
+    # SEMPRE o SQLite local (finance.db), mesmo que a produção esteja
+    # configurada para Postgres/Supabase. Ativado com FORCE_LOCAL_DB=1.
+    # Não depende de nenhuma senha/arquivo de segredo — só uma variável de
+    # ambiente, então é seguro alternar sem tocar em credenciais reais.
+    if os.getenv("FORCE_LOCAL_DB", "").lower() in ("1", "true", "yes"):
+        return f"sqlite:///{Path(__file__).parent / 'finance.db'}"
+
     # 1) Streamlit secrets (produção na nuvem)
     try:
         import streamlit as st
