@@ -1,85 +1,25 @@
-import datetime
+"""Ponto de entrada e shell do app (Streamlit multipage via st.navigation).
 
-import pandas as pd
-
-from database import fetch_parcelamentos, fetch_transacoes, init_db
-from utils.finance import filtrar_realizadas
-from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page
+Toda execução passa por aqui: configura tema/CSS/JS, exige login, garante o
+schema, desenha o menu lateral (utils/nav.py) e então roda a tela escolhida
+(scripts em views/). As telas não chamam set_page_config nem require_login.
+"""
+from database import fetch_transacoes, init_db
 from utils.auth import require_login
+from utils.nav import build_pages, item_atual, render_sidebar
+from utils.ui import set_titulo_topo, setup_app
 
-setup_page("Gestão Financeira Pessoal", "💰")
+import streamlit as st
+
+setup_app()
 require_login()
 init_db()
 
-page_header(
-    "Gestão Financeira Pessoal",
-    "Seu painel de controle de receitas, despesas, parcelamentos e holerites — tudo local.",
-    "💰",
-)
+pages = build_pages()
+pagina = st.navigation(list(pages.values()), position="hidden")
+ativo = item_atual(pages, pagina)
 
-transacoes = fetch_transacoes()
-parcelamentos = fetch_parcelamentos()
+set_titulo_topo(ativo.titulo)
+render_sidebar(pages, ativo, fetch_transacoes())
 
-# ---------- KPIs de visão geral ----------
-# "Despesas"/"Saldo" contam só o que já foi REALIZADO (data <= hoje ou já pago) —
-# parcelas futuras ainda não pagas são compromisso, não gasto, e ficam de fora
-# daqui (aparecem em "Parcelas futuras" e na Projeção Futura).
-hoje = datetime.date.today()
-
-if transacoes:
-    df = pd.DataFrame(transacoes)
-    df_realizado = filtrar_realizadas(df, hoje)
-    total_receita = df_realizado.loc[df_realizado["tipo"] == "receita", "valor"].sum()
-    total_despesa = df_realizado.loc[df_realizado["tipo"] == "despesa", "valor"].sum()
-    saldo = total_receita - total_despesa
-else:
-    total_receita = total_despesa = saldo = 0.0
-
-comprometido_futuro = 0.0
-if parcelamentos:
-    dfp = pd.DataFrame(parcelamentos)
-    dfp["venc"] = pd.to_datetime(dfp["data_vencimento"])
-    dfp["pago"] = dfp["pago"].fillna(False).astype(bool)
-    pendente = dfp[(dfp["venc"] >= pd.Timestamp(hoje)) & (~dfp["pago"])]
-    comprometido_futuro = pendente["valor_parcela"].sum()
-
-kpi_row([
-    {"label": "Receitas", "value": _fmt_brl(total_receita), "color": PALETTE["receita"],
-     "sub": "Já recebidas"},
-    {"label": "Despesas", "value": _fmt_brl(total_despesa), "color": PALETTE["despesa"],
-     "sub": "Já incorridas ou pagas"},
-    {"label": "Saldo", "value": _fmt_brl(saldo),
-     "color": PALETTE["receita"] if saldo >= 0 else PALETTE["despesa"],
-     "sub": "Receitas − Despesas (já realizadas)"},
-    {"label": "Parcelas futuras", "value": _fmt_brl(comprometido_futuro),
-     "color": PALETTE["accent"], "sub": "Ainda não pagas, a partir de hoje"},
-])
-
-# ---------- Cards de navegação ----------
-import streamlit as st
-
-st.subheader("Módulos")
-
-# (emoji, título, descrição, caminho do arquivo da página). Usamos st.page_link
-# (navegação nativa) para preservar a sessão de login ao clicar — links comuns
-# recarregam a página inteira e derrubariam o login.
-SECOES = [
-    ("🧾", "Parcelamentos", "Registre compras parceladas e gere as parcelas futuras automaticamente.", "pages/1_Parcelamentos.py"),
-    ("📊", "Visão Geral", "Distribuição de despesas por categoria e lista de transações.", "pages/2_Visao_Geral.py"),
-    ("🔗", "Alocação De/Para", "Destine cada receita às despesas que ela vai cobrir.", "pages/9_Alocacao.py"),
-    ("🗂️", "Gerenciar Lançamentos", "Edite categorias e campos, ou exclua lançamentos.", "pages/8_Gerenciar_Lancamentos.py"),
-    ("✍️", "Lançamento Manual", "Registre receitas e despesas avulsas em dinheiro.", "pages/3_Lancamento_Manual.py"),
-    ("📥", "Importar PDF", "Arraste holerites ou faturas de cartão — o tipo é identificado automaticamente.", "pages/4_Importar_PDF.py"),
-    ("👫", "Visão Casal", "Compare receita e despesa de cada responsável.", "pages/6_Visao_Casal.py"),
-    ("📈", "Projeção Futura", "Veja os gastos já comprometidos nos próximos meses.", "pages/7_Projecao_Futura.py"),
-    ("⚙️", "Configurações", "Personalize os nomes dos responsáveis.", "pages/0_Configuracoes.py"),
-]
-
-cols = st.columns(4)
-for i, (emoji, titulo, desc, page_path) in enumerate(SECOES):
-    with cols[i % 4]:
-        with st.container(border=True):
-            st.page_link(page_path, label=f"**{emoji} {titulo}**")
-            st.caption(desc)
-
-st.caption("Ou use o menu à esquerda para navegar entre os módulos.")
+pagina.run()

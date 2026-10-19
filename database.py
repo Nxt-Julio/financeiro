@@ -51,7 +51,7 @@ SEED_REGRAS = [
 ]
 
 # Campos de uma transação que o usuário pode editar na tela de gerenciamento.
-CAMPOS_EDITAVEIS = ("data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago")
+CAMPOS_EDITAVEIS = ("data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago", "cartao_id")
 
 
 def _database_url() -> str:
@@ -133,6 +133,28 @@ configuracoes = Table(
     Column("valor", Text, nullable=False),
 )
 
+# Cartões de crédito cadastrados (limite e ciclo da fatura). Os cálculos de
+# fatura/limite ficam em utils/cards.py.
+cartoes = Table(
+    "cartoes",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("nome", String(100), nullable=False, unique=True),
+    Column("limite", Float, nullable=False, default=0.0),
+    Column("dia_fechamento", Integer, nullable=False),
+    Column("dia_vencimento", Integer, nullable=False),
+    Column("cor", String(20), nullable=False, default="#6366F1"),
+)
+
+# Teto mensal de gasto por categoria (Orçamento & Metas).
+orcamentos = Table(
+    "orcamentos",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("categoria", String(255), nullable=False, unique=True),
+    Column("teto", Float, nullable=False),
+)
+
 transacoes = Table(
     "transacoes",
     metadata,
@@ -147,6 +169,8 @@ transacoes = Table(
     Column("origem", Text, nullable=False),
     Column("id_parcelamento", Integer, ForeignKey("parcelamentos.id_origem")),
     Column("pago", Boolean, nullable=False, default=False),
+    # Cartão da compra (opcional; só faz sentido com origem "Cartão").
+    Column("cartao_id", Integer, ForeignKey("cartoes.id", ondelete="SET NULL")),
 )
 
 # Alocação financeira (vínculo De/Para): destina parte de uma receita para cobrir
@@ -180,11 +204,23 @@ def _migrar_coluna_pago():
             conn.execute(text("ALTER TABLE transacoes ADD COLUMN pago BOOLEAN NOT NULL DEFAULT false"))
 
 
+def _migrar_coluna_cartao():
+    """Migração leve: adiciona `transacoes.cartao_id` em bancos criados antes da
+    tela Contas & Cartões. Coluna nula por padrão — nenhum dado existente muda."""
+    colunas = [c["name"] for c in inspect(engine).get_columns("transacoes")]
+    if "cartao_id" not in colunas:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE transacoes ADD COLUMN cartao_id INTEGER REFERENCES cartoes(id) ON DELETE SET NULL"
+            ))
+
+
 def init_db():
     """Cria as tabelas (se não existirem) e insere os dados semente (regras de
     categorização e nomes padrão de responsável)."""
     metadata.create_all(engine)
     _migrar_coluna_pago()
+    _migrar_coluna_cartao()
 
     with engine.begin() as conn:
         total_regras = conn.execute(select(func.count()).select_from(regras_categorizacao)).scalar()
@@ -248,7 +284,7 @@ def atualizar_responsavel(chave, novo_nome):
 # ---------------------------------------------------------------------------
 # Transações
 # ---------------------------------------------------------------------------
-def inserir_transacao(data, descricao_original, estabelecimento, categoria, valor, tipo, responsavel, origem, id_parcelamento=None):
+def inserir_transacao(data, descricao_original, estabelecimento, categoria, valor, tipo, responsavel, origem, id_parcelamento=None, cartao_id=None):
     """Insere uma única transação (abre e fecha sua própria transação de banco).
     Retorna o id gerado."""
     with engine.begin() as conn:
@@ -263,6 +299,7 @@ def inserir_transacao(data, descricao_original, estabelecimento, categoria, valo
                 responsavel=responsavel,
                 origem=origem,
                 id_parcelamento=id_parcelamento,
+                cartao_id=cartao_id,
             )
         )
     return result.inserted_primary_key[0]
@@ -273,7 +310,7 @@ def inserir_transacoes_lote(linhas):
 
     `linhas` é uma lista de dicts com as chaves: data, descricao_original,
     estabelecimento, categoria, valor, tipo, responsavel, origem
-    (id_parcelamento é opcional e assume None)."""
+    (id_parcelamento e cartao_id são opcionais e assumem None)."""
     if not linhas:
         return 0
     registros = []
@@ -288,6 +325,7 @@ def inserir_transacoes_lote(linhas):
             "responsavel": linha["responsavel"],
             "origem": linha["origem"],
             "id_parcelamento": linha.get("id_parcelamento"),
+            "cartao_id": linha.get("cartao_id"),
         }
         registros.append(registro)
     with engine.begin() as conn:
@@ -342,7 +380,7 @@ def fetch_categorias():
 # ---------------------------------------------------------------------------
 # Parcelamentos
 # ---------------------------------------------------------------------------
-def criar_parcelamento(descricao, categoria, responsavel, origem, parcelas):
+def criar_parcelamento(descricao, categoria, responsavel, origem, parcelas, cartao_id=None):
     """Cria um parcelamento completo em uma única transação de banco:
     para cada parcela, insere uma linha em `parcelamentos` e a transação
     (despesa) correspondente vinculada a ela.
@@ -380,6 +418,7 @@ def criar_parcelamento(descricao, categoria, responsavel, origem, parcelas):
                     responsavel=responsavel,
                     origem=origem,
                     id_parcelamento=id_origem,
+                    cartao_id=cartao_id,
                 )
             )
 
@@ -520,3 +559,75 @@ def remover_alocacao(id_alocacao):
     """Desfaz um vínculo (as transações originais não são tocadas)."""
     with engine.begin() as conn:
         conn.execute(delete(alocacoes).where(alocacoes.c.id == id_alocacao))
+
+
+# ---------------------------------------------------------------------------
+# Cartões de crédito
+# ---------------------------------------------------------------------------
+def fetch_cartoes():
+    """Cartões cadastrados: id, nome, limite, dia_fechamento, dia_vencimento, cor."""
+    with engine.connect() as conn:
+        rows = conn.execute(select(cartoes).order_by(cartoes.c.nome)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def salvar_cartao(nome, limite, dia_fechamento, dia_vencimento, cor, id_cartao=None):
+    """Cria (sem id) ou atualiza (com id) um cartão."""
+    valores = dict(
+        nome=nome.strip(), limite=float(limite), dia_fechamento=int(dia_fechamento),
+        dia_vencimento=int(dia_vencimento), cor=cor,
+    )
+    with engine.begin() as conn:
+        if id_cartao is None:
+            conn.execute(insert(cartoes).values(**valores))
+        else:
+            conn.execute(update(cartoes).where(cartoes.c.id == id_cartao).values(**valores))
+
+
+def excluir_cartao(id_cartao):
+    """Remove o cartão; os lançamentos dele continuam, só perdem o vínculo."""
+    with engine.begin() as conn:
+        conn.execute(update(transacoes).where(transacoes.c.cartao_id == id_cartao).values(cartao_id=None))
+        conn.execute(delete(cartoes).where(cartoes.c.id == id_cartao))
+
+
+def atribuir_cartao_sem_vinculo(id_cartao):
+    """Vincula ao cartão todas as despesas de origem "Cartão" que ainda não têm
+    cartão (lançamentos anteriores a esta tela). Retorna quantas foram vinculadas."""
+    with engine.begin() as conn:
+        result = conn.execute(
+            update(transacoes)
+            .where(
+                transacoes.c.origem == "Cartão",
+                transacoes.c.tipo == "despesa",
+                transacoes.c.cartao_id.is_(None),
+            )
+            .values(cartao_id=id_cartao)
+        )
+    return result.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Orçamento (teto mensal por categoria)
+# ---------------------------------------------------------------------------
+def fetch_orcamentos():
+    """Tetos cadastrados: id, categoria, teto."""
+    with engine.connect() as conn:
+        rows = conn.execute(select(orcamentos).order_by(orcamentos.c.categoria)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def salvar_orcamento(categoria, teto):
+    """Define o teto mensal da categoria (cria ou substitui)."""
+    categoria = categoria.strip()
+    with engine.begin() as conn:
+        existente = conn.execute(select(orcamentos.c.id).where(orcamentos.c.categoria == categoria)).scalar()
+        if existente is None:
+            conn.execute(insert(orcamentos).values(categoria=categoria, teto=float(teto)))
+        else:
+            conn.execute(update(orcamentos).where(orcamentos.c.id == existente).values(teto=float(teto)))
+
+
+def excluir_orcamento(id_orcamento):
+    with engine.begin() as conn:
+        conn.execute(delete(orcamentos).where(orcamentos.c.id == id_orcamento))

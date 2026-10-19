@@ -15,20 +15,15 @@ from database import (
     atualizar_transacao,
     fetch_parcelas_pendentes,
     fetch_regras,
+    fetch_cartoes,
     fetch_transacoes,
     get_responsaveis,
-    init_db,
     inserir_transacao,
     inserir_transacoes_lote,
 )
 from utils.document_detector import TIPOS_DOCUMENTO, detectar_tipo, ler_como, sugerir_responsavel
 from utils.statement_parser import aplicar_regra_categoria, extrair_texto_pdf
-from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header, setup_page
-from utils.auth import require_login
-
-setup_page("Importar PDF", "📥")
-require_login()
-init_db()
+from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header
 
 page_header(
     "Importar PDF",
@@ -106,11 +101,8 @@ def form_holerite(estado, dados, chave):
         opcoes_parcela[rotulo] = p["transacao_id"]
 
     with st.form(f"form_hol_{chave}"):
-        col1, col2 = st.columns(2)
-        with col1:
-            responsavel = _seletor_responsavel(estado["texto"], f"resp_{chave}")
-        with col2:
-            empresa = st.text_input("Empresa (opcional)", key=f"emp_{chave}")
+        responsavel = _seletor_responsavel(estado["texto"], f"resp_{chave}")
+        empresa = st.text_input("Empresa (opcional)", key=f"emp_{chave}")
         rotulo_parcela = st.selectbox(
             "Este holerite já desconta alguma parcela em aberto? (opcional)",
             list(opcoes_parcela),
@@ -178,6 +170,12 @@ def form_fatura(estado, transacoes, chave):
                    "desmarque-a aqui para não contar duas vezes.")
 
     responsavel = _seletor_responsavel(estado["texto"], f"resp_{chave}")
+    cartoes = fetch_cartoes()
+    opcoes_cartao = {"— Nenhum —": None} | {c["nome"]: c["id"] for c in cartoes}
+    nome_cartao = st.selectbox(
+        "Cartão da fatura", list(opcoes_cartao), index=1 if cartoes else 0, key=f"cartao_{chave}",
+        disabled=not cartoes, help="Os lançamentos entram na fatura deste cartão (Contas & Cartões).",
+    )
     editado = st.data_editor(
         df,
         hide_index=True,
@@ -212,6 +210,7 @@ def form_fatura(estado, transacoes, chave):
                 "tipo": "despesa",
                 "responsavel": responsavel,
                 "origem": "Cartão",
+                "cartao_id": opcoes_cartao[nome_cartao],
             }
             for _, linha in selecionados.iterrows()
         ])

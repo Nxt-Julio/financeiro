@@ -5,9 +5,11 @@ localmente e nos *Secrets* do Streamlit Cloud) ou na variável de ambiente
 `AUTH_PASSWORD` (deploys self-hosted, ex: Coolify, sem suporte a secrets.toml) —
 nunca no código nem no GitHub.
 
-Uso: cada página chama `require_login()` logo após `setup_page(...)`. Enquanto a
-sessão não estiver autenticada, mostra o formulário de senha e interrompe a
-renderização (`st.stop()`), de modo que nenhum dado é exibido nem consultado.
+Uso: o `app.py` (roteador) chama `require_login()` antes de montar a navegação.
+Enquanto a sessão não estiver autenticada, mostra o formulário de senha e
+interrompe a renderização (`st.stop()`), de modo que nenhum dado é exibido nem
+consultado. O botão "Sair" e o aviso de sandbox ficam no rodapé da sidebar
+(utils/nav.py).
 
 Comportamento **fail-closed**: se a senha não estiver configurada, o acesso é
 bloqueado (em vez de liberar tudo).
@@ -24,7 +26,7 @@ import os
 import streamlit as st
 
 
-def _modo_sandbox():
+def modo_sandbox():
     return os.getenv("FORCE_LOCAL_DB", "").lower() in ("1", "true", "yes")
 
 
@@ -40,14 +42,11 @@ def _senha_configurada():
 
 def require_login():
     """Bloqueia a página até a sessão estar autenticada."""
-    if _modo_sandbox():
+    if modo_sandbox():
         st.session_state["auth_ok"] = True
-        with st.sidebar:
-            st.warning("🧪 Modo sandbox — login desabilitado (dados de teste, não é produção).")
         return
 
     if st.session_state.get("auth_ok"):
-        _sidebar_logout()
         return
 
     senha_real = _senha_configurada()
@@ -58,8 +57,7 @@ def require_login():
         )
         st.stop()
 
-    meio = st.columns([1, 1.4, 1])[1]
-    with meio:
+    with st.container(key="login_box"):
         st.markdown("## 🔒 Acesso restrito")
         st.caption("Informe a senha para acessar suas informações financeiras.")
         with st.form("login_form"):
@@ -76,8 +74,5 @@ def require_login():
     st.stop()
 
 
-def _sidebar_logout():
-    with st.sidebar:
-        if st.button("🚪 Sair", use_container_width=True):
-            st.session_state["auth_ok"] = False
-            st.rerun()
+def sair():
+    st.session_state["auth_ok"] = False

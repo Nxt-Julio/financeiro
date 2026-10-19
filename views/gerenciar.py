@@ -8,19 +8,14 @@ from database import (
     TIPOS,
     atualizar_transacao,
     excluir_transacao,
+    fetch_cartoes,
     fetch_transacoes,
     get_responsaveis,
-    init_db,
 )
-from utils.ui import page_header, setup_page
-from utils.auth import require_login
-
-setup_page("Gerenciar Lançamentos", "🗂️")
-require_login()
-init_db()
+from utils.ui import _fmt_brl, page_header
 
 page_header(
-    "Gerenciar Lançamentos",
+    "Editar lançamentos",
     "Edite categorias e outros campos direto na tabela, ou marque linhas para excluir. "
     "As correções refletem imediatamente nos dashboards.",
     "🗂️",
@@ -39,9 +34,16 @@ responsaveis = get_responsaveis()
 
 df["pago"] = df["pago"].fillna(False).astype(bool)
 
+# Cartão aparece pelo nome na tabela e é convertido de volta para id ao salvar.
+cartoes = fetch_cartoes()
+nome_por_id = {c["id"]: c["nome"] for c in cartoes}
+id_por_nome = {c["nome"]: c["id"] for c in cartoes}
+df["cartao"] = df["cartao_id"].map(nome_por_id)
+
 # ---------- Filtros ----------
 with st.expander("🔎 Filtros", expanded=False):
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
+    col3, col4 = st.columns(2)
     with col1:
         filtro_resp = st.multiselect("Responsável", responsaveis, default=[])
     with col2:
@@ -74,8 +76,8 @@ total_pago = despesas.loc[despesas["pago"], "valor"].sum()
 total_pendente = despesas.loc[~despesas["pago"], "valor"].sum()
 c1, c2, c3 = st.columns(3)
 c1.metric("Lançamentos exibidos", f"{len(df_filtrado)} de {len(df)}")
-c2.metric("Despesas pagas", f"R$ {total_pago:,.2f}")
-c3.metric("Despesas pendentes", f"R$ {total_pendente:,.2f}")
+c2.metric("Despesas pagas", _fmt_brl(total_pago))
+c3.metric("Despesas pendentes", _fmt_brl(total_pendente))
 
 # ---------- Tabela editável ----------
 # Snapshot pré-edição (indexado por id) para reconciliar as mudanças ao salvar.
@@ -96,11 +98,12 @@ edited = st.data_editor(
     num_rows="fixed",
     column_order=[
         "Excluir", "pago", "data", "descricao_original", "estabelecimento",
-        "categoria", "valor", "tipo", "responsavel", "origem",
+        "categoria", "valor", "tipo", "responsavel", "origem", "cartao",
     ],
     column_config={
         "id": None,
         "id_parcelamento": None,
+        "cartao_id": None,
         "Excluir": st.column_config.CheckboxColumn("Excluir", width="small"),
         "pago": st.column_config.CheckboxColumn("Pago", width="small", help="Marque as parcelas/lançamentos já quitados."),
         "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
@@ -114,12 +117,16 @@ edited = st.data_editor(
         "tipo": st.column_config.SelectboxColumn("Tipo", options=TIPOS),
         "responsavel": st.column_config.SelectboxColumn("Responsável", options=responsaveis),
         "origem": st.column_config.SelectboxColumn("Origem", options=ORIGENS),
+        "cartao": st.column_config.SelectboxColumn("Cartão", options=list(id_por_nome)),
     },
     key="editor_lancamentos",
 )
 
-if st.button("💾 Salvar alterações", type="primary"):
-    campos = ["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago"]
+with st.container(key="acao_rodape"):
+    salvar = st.button("💾 Salvar alterações", type="primary", use_container_width=True)
+
+if salvar:
+    campos = ["data", "descricao_original", "estabelecimento", "categoria", "valor", "tipo", "responsavel", "origem", "pago", "cartao"]
     n_editados = 0
     n_excluidos = 0
 
@@ -146,9 +153,17 @@ if st.button("💾 Salvar alterações", type="primary"):
             elif campo == "pago":
                 novo = bool(novo)
                 antigo = bool(antigo)
+            elif campo == "cartao":
+                novo = None if pd.isna(novo) else novo
+                antigo = None if pd.isna(antigo) else antigo
 
             if novo != antigo:
-                alteracoes[campo] = novo
+                if campo == "cartao":
+                    alteracoes["cartao_id"] = id_por_nome.get(novo)
+                    if novo:
+                        alteracoes["origem"] = "Cartão"
+                else:
+                    alteracoes[campo] = novo
 
         if alteracoes:
             atualizar_transacao(id_transacao, alteracoes)
