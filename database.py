@@ -81,6 +81,10 @@ def _normalizar_url(url: str) -> str:
     # Alguns provedores entregam "postgres://", que o SQLAlchemy não aceita.
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
+    # Sem driver explícito, o SQLAlchemy 2.x tenta psycopg (v3), que não é uma
+    # dependência deste projeto (usamos psycopg2-binary). Força o dialeto.
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     return url
 
 
