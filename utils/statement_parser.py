@@ -34,6 +34,10 @@ _RE_INICIO_TRANSACAO = re.compile(r"^(\d{2})\s+([A-ZÇ]{3})\s+", re.MULTILINE)
 # sign unicode) e "R$", seguido do número em formato BR.
 _RE_VALOR = re.compile(r"(−)?R\$\s*([\d.]+,\d{2})")
 
+# Lançamentos que não são gasto novo: "Saldo em rotativo" é o saldo da fatura
+# anterior rolado para esta — as compras dele já entraram na importação anterior.
+_RE_IGNORAR = re.compile(r"^saldo em rotativo", re.IGNORECASE)
+
 
 def valor_br_para_float(texto: str) -> float:
     """Converte um número no formato brasileiro (ex: "1.234,56") para float (1234.56).
@@ -88,7 +92,11 @@ def _localizar_secao_transacoes(texto: str) -> str:
     Se o cabeçalho não existir, retorna o texto completo (o filtro por linhas
     que começam com "DD MMM" já elimina a maior parte do ruído de cabeçalho).
     """
-    match = re.search(r"TRANSA[ÇC][ÕO]ES", texto, re.IGNORECASE)
+    # Cabeçalho real da lista na Nubank: "TRANSAÇÕES DE 07 SET A 07 OUT". A
+    # palavra solta "transações" aparece antes, nos textos explicativos.
+    match = re.search(r"TRANSA[ÇC][ÕO]ES\s+DE\s+\d{2}", texto)
+    if not match:
+        match = re.search(r"TRANSA[ÇC][ÕO]ES", texto, re.IGNORECASE)
     if match:
         return texto[match.end():]
     return texto
@@ -110,6 +118,8 @@ def parse_transacoes(texto: str) -> list[dict]:
         raise ValueError("Não foi possível extrair texto do PDF enviado")
 
     ano = extrair_ano_fatura(texto)
+    m_fatura = re.search(r"FATURA\s+\d{2}\s+([A-ZÇ]{3})\s+\d{4}", texto, re.IGNORECASE)
+    mes_fatura = MESES_PT.get(m_fatura.group(1).lower()) if m_fatura else None
     secao = _localizar_secao_transacoes(texto)
 
     inicios = list(_RE_INICIO_TRANSACAO.finditer(secao))
@@ -134,26 +144,33 @@ def parse_transacoes(texto: str) -> list[dict]:
         # primeiro).
         resto_primeira_linha = bloco[m.end() - inicio_bloco:]
         quebra = resto_primeira_linha.find("\n")
-        primeira_linha = resto_primeira_linha if quebra == -1 else resto_primeira_linha[:quebra]
+        linha_transacao = resto_primeira_linha if quebra == -1 else resto_primeira_linha[:quebra]
         # remove um eventual valor já presente na primeira linha
-        primeira_linha = re.split(r"−?R\$", primeira_linha)[0]
-        descricao = re.sub(r"\s+", " ", primeira_linha).strip()
+        descricao = re.sub(r"\s+", " ", re.split(r"−?R\$", linha_transacao)[0]).strip()
 
-        # Valor: última ocorrência de um valor monetário no bloco inteiro.
-        valores = list(_RE_VALOR.finditer(bloco))
-        if not valores:
+        if _RE_IGNORAR.search(descricao):
+            continue
+
+        # Valor: o da própria linha da transação. As linhas de detalhe abaixo
+        # dela trazem outros valores que NÃO são o da compra (cotação do dólar,
+        # "Total a pagar: R$ X (... + R$ Y de juros)", "Valor original: R$ Z"),
+        # então só olhamos o resto do bloco quando a linha não tem valor
+        # (descrição quebrada em duas linhas).
+        valor_match = _RE_VALOR.search(linha_transacao) or _RE_VALOR.search(bloco)
+        if not valor_match:
             # bloco sem valor associado (dado incompleto) - ignora
             continue
-        ultimo_valor = valores[-1]
-        negativo = ultimo_valor.group(1) == "−"
-        valor = valor_br_para_float(ultimo_valor.group(2))
+        negativo = valor_match.group(1) == "−"
+        valor = valor_br_para_float(valor_match.group(2))
 
         if negativo:
             # pagamento/crédito - não é despesa, não entra no resultado
             continue
 
+        # Fatura de JAN traz compras de DEZ do ano anterior.
+        ano_transacao = ano - 1 if mes_fatura and mes_num > mes_fatura else ano
         try:
-            data_transacao = date(ano, mes_num, dia)
+            data_transacao = date(ano_transacao, mes_num, dia)
         except ValueError:
             continue
 

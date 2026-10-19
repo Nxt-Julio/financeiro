@@ -1,4 +1,5 @@
 import datetime
+import re
 
 import streamlit as st
 
@@ -29,7 +30,11 @@ if arquivo is not None:
         st.session_state.holerite_dados = dados
     except ValueError as erro:
         st.session_state.holerite_dados = None
-        st.error(f"Não foi possível ler o holerite: {erro}")
+        if re.search(r"TRANSA[ÇC][ÕO]ES\s+DE|Nu Pagamentos|RESUMO DA FATURA", texto, re.IGNORECASE):
+            st.error("Este PDF parece ser uma **fatura/extrato de cartão**, não um holerite.")
+            st.page_link("pages/5_Leitura_Extrato.py", label="Importar na Leitura de Extrato", icon="📑")
+        else:
+            st.error(f"Não foi possível ler o holerite: {erro}")
     except Exception as erro:  # noqa: BLE001 - erro inesperado de parsing/PDF
         st.session_state.holerite_dados = None
         st.error(f"Ocorreu um erro ao processar o PDF: {erro}")

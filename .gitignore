@@ -17,3 +17,6 @@ _opensquad/
 _memory/
 AGENTS.md
 projects/
+
+# PDFs de holerite/fatura (CPF, transações reais) — NUNCA commitar
+*.pdf
