@@ -128,12 +128,21 @@ hr { border-color: var(--border); }
     background: linear-gradient(180deg, var(--surface), var(--bg));
     border-right: 1px solid var(--border);
 }
-[data-testid="stSidebarHeader"] { padding: calc(8px + var(--safe-top)) 12px 0; height: auto; min-height: 0; }
+[data-testid="stSidebarHeader"] {
+    padding: calc(4px + var(--safe-top)) 8px 0; height: auto; min-height: 0; margin-bottom: 0;
+}
+[data-testid="stSidebarHeader"] [data-testid="stLogoSpacer"] { display: none; }
+[data-testid="stSidebarCollapseButton"] { margin-left: auto; }
 [data-testid="stSidebarCollapseButton"] button { width: var(--tap); height: var(--tap); }
 [data-testid="stSidebarUserContent"] {
     padding: 0 12px calc(16px + var(--safe-bottom)) calc(12px + var(--safe-left));
 }
-[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] { gap: .35rem; }
+/* A coluna da sidebar tem altura fixa e rolagem: sem isto o flex encolhe os
+   contêineres dos itens (36px) e os links de 48px se sobrepõem. */
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] { gap: 2px; }
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] > * { flex-shrink: 0; }
+/* O Markdown do Streamlit tem margem inferior negativa — anula no menu. */
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"]:has(.nav-head, .nav-section, .nav-sandbox) { margin-bottom: 0; }
 
 /* Mobile: gaveta sobreposta com backdrop escuro (o toque fora já fecha). */
 @media (max-width: 767px) {
@@ -145,10 +154,10 @@ hr { border-color: var(--border); }
     }
 }
 
-/* Cabeçalho do menu: identidade, saldo e período */
+/* Cabeçalho do menu: identidade e saldo */
 .nav-head {
     display: flex; align-items: center; gap: 12px;
-    padding: 12px; margin-bottom: 4px;
+    padding: 12px; margin-bottom: 10px;
     border-radius: var(--radius);
     background: linear-gradient(135deg, rgba(99,102,241,.22), rgba(34,211,238,.08));
     border: 1px solid var(--border);
@@ -161,34 +170,49 @@ hr { border-color: var(--border); }
 }
 .nav-who { min-width: 0; }
 .nav-name { font-weight: 700; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nav-saldo-lbl { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
-.nav-saldo { font-weight: 800; font-size: 1.15rem; }
-.nav-section {
-    color: var(--muted); font-size: .7rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .08em;
-    margin: 14px 4px 2px;
+.nav-saldo-lbl { color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+.nav-saldo { font-weight: 800; font-size: 1.12rem; }
+/* Seletor de período logo abaixo do cabeçalho */
+[data-testid="stSidebar"] .stSelectbox { margin-bottom: 4px; }
+[data-testid="stSidebar"] .stSelectbox [data-testid="stWidgetLabel"] p {
+    color: var(--muted); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
 }
-.nav-sandbox { font-size: .75rem; color: #FBBF24; padding: 6px 10px; border-radius: 10px;
+.nav-section {
+    color: var(--muted); font-size: .68rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em;
+    padding: 16px 12px 6px;
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
+}
+.nav-sandbox { font-size: .75rem; color: #FBBF24; padding: 8px 10px; margin-top: 8px; border-radius: 10px;
     background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); }
 
-/* Itens de navegação (st.page_link) — 48px de altura, ícone + rótulo */
+/* Itens de navegação (st.page_link) — 44px, ícone Material + rótulo */
+[data-testid="stSidebar"] [data-testid="stPageLink"] { width: 100%; }
+/* O Streamlit aplica margin -6px aos page links da sidebar (pensado para links
+   de 32px); com 44px eles se sobreporiam. */
+[data-testid="stSidebar"] [data-testid="stElementContainer"]:has(> [data-testid="stPageLink"]) { margin: 0 !important; }
 [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] {
-    min-height: 48px; width: 100%;
+    min-height: 44px; width: 100%;
     display: flex; align-items: center; gap: 12px;
     padding: 0 12px; margin: 0;
-    border-radius: 12px; border: 1px solid transparent;
+    border-radius: 10px; border: 1px solid transparent;
     transition: background .12s ease, border-color .12s ease;
 }
 [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:hover { background: rgba(99,102,241,.12); }
-[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p { font-size: .95rem; font-weight: 550; }
-[data-testid="stSidebar"] [data-testid="stPageLink"] { width: 100%; }
-/* Botões do rodapé do menu (Sair / Recolher) com cara de item de menu */
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p { font-size: .93rem; font-weight: 550; color: var(--text); }
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] [data-testid="stIconMaterial"] { font-size: 1.3rem; color: var(--muted); }
+
+/* Botões do rodapé do menu (Recolher / Sair) com cara de item de menu */
 [data-testid="stSidebar"] .stButton button {
-    justify-content: flex-start; min-height: 48px; padding: 0 12px;
-    background: transparent; border: 1px solid transparent;
+    width: 100%; min-height: 44px; padding: 0 12px; gap: 12px;
+    justify-content: flex-start;
+    background: transparent; border: 1px solid transparent; font-weight: 550;
 }
-[data-testid="stSidebar"] .stButton button:hover { background: rgba(99,102,241,.12); transform: none; box-shadow: none; }
-.st-key-nav_sair button p { color: #FB7185; }
+[data-testid="stSidebar"] .stButton button > div { justify-content: flex-start; gap: 12px; }
+[data-testid="stSidebar"] .stButton button [data-testid="stIconMaterial"] { font-size: 1.3rem; color: var(--muted); }
+[data-testid="stSidebar"] .stButton button:hover { background: rgba(99,102,241,.12); transform: none; box-shadow: none; filter: none; }
+.st-key-nav_sair button p, .st-key-nav_sair button [data-testid="stIconMaterial"] { color: #FB7185 !important; }
 
 /* ================= Desktop / tablet ================= */
 @media (min-width: 768px) {

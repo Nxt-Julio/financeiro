@@ -40,15 +40,15 @@ class NavItem:
 
 # Ordem = ordem no menu. Dentro de cada seção, do uso mais frequente ao menos.
 NAV: tuple[NavItem, ...] = (
-    NavItem("", "Visão Geral", "🏠", "views/dashboard.py", "operacional", padrao=True),
-    NavItem("transacoes", "Transações", "💸", "views/transacoes.py", "operacional"),
-    NavItem("cartoes", "Contas & Cartões", "💳", "views/cartoes.py", "operacional"),
-    NavItem("novo", "Novo lançamento", "➕", "views/lancamento.py", "operacional"),
-    NavItem("importar", "Importar PDF", "📥", "views/importar_pdf.py", "operacional"),
-    NavItem("orcamento", "Orçamento & Metas", "🎯", "views/orcamento.py", "planejamento"),
-    NavItem("relatorios", "Relatórios", "📊", "views/relatorios.py", "planejamento"),
-    NavItem("editar", "Editar lançamentos", "🗂️", "views/gerenciar.py", "planejamento"),
-    NavItem("configuracoes", "Configurações", "⚙️", "views/configuracoes.py", "rodape"),
+    NavItem("", "Visão Geral", ":material/space_dashboard:", "views/dashboard.py", "operacional", padrao=True),
+    NavItem("transacoes", "Transações", ":material/swap_vert:", "views/transacoes.py", "operacional"),
+    NavItem("cartoes", "Contas & Cartões", ":material/credit_card:", "views/cartoes.py", "operacional"),
+    NavItem("novo", "Novo lançamento", ":material/add_circle:", "views/lancamento.py", "operacional"),
+    NavItem("importar", "Importar PDF", ":material/upload_file:", "views/importar_pdf.py", "operacional"),
+    NavItem("orcamento", "Orçamento & Metas", ":material/savings:", "views/orcamento.py", "planejamento"),
+    NavItem("relatorios", "Relatórios", ":material/bar_chart:", "views/relatorios.py", "planejamento"),
+    NavItem("editar", "Editar lançamentos", ":material/edit_note:", "views/gerenciar.py", "planejamento"),
+    NavItem("configuracoes", "Configurações", ":material/settings:", "views/configuracoes.py", "rodape"),
 )
 
 TITULOS_SECAO: dict[Secao, str] = {
@@ -97,11 +97,7 @@ def _cabecalho(transacoes: list[dict]):
     opcoes = periodo.opcoes(transacoes)
     if st.session_state.get("periodo") not in opcoes:
         st.session_state["periodo"] = periodo.mes_corrente()
-    st.selectbox(
-        "📅 Período", opcoes, key="periodo",
-        format_func=lambda p: periodo.rotulo(p, longo=True),
-        help="Filtra Visão Geral, Transações, Orçamento e Relatórios.",
-    )
+    st.selectbox("Período", opcoes, key="periodo", format_func=lambda p: periodo.rotulo(p, longo=True))
 
 
 def _link(item: NavItem, pages: dict[str, StreamlitPage], ativo: NavItem, compacto: bool):
@@ -124,13 +120,14 @@ def render_sidebar(pages: dict[str, StreamlitPage], ativo: NavItem, transacoes: 
                 if item.secao == secao:
                     _link(item, pages, ativo, compacto)
 
-        if st.button("⇥ Expandir menu" if compacto else "⇤ Recolher menu", key="nav_recolher",
-                     use_container_width=True,
-                     help="Mostrar ícones e nomes." if compacto else "Mostrar só os ícones."):
+        st.markdown('<div class="nav-section"></div>', unsafe_allow_html=True)
+        if st.button("Expandir menu" if compacto else "Recolher menu", key="nav_recolher",
+                     icon=":material/left_panel_open:" if compacto else ":material/left_panel_close:",
+                     use_container_width=True):
             st.session_state["nav_compacto"] = not compacto
             st.rerun()
         if not modo_sandbox():
-            if st.button("🚪 Sair", key="nav_sair", use_container_width=True):
+            if st.button("Sair", key="nav_sair", icon=":material/logout:", use_container_width=True):
                 sair()
                 st.rerun()
         else:
@@ -143,40 +140,38 @@ def render_sidebar(pages: dict[str, StreamlitPage], ativo: NavItem, transacoes: 
 # Item selecionado: realce, barra à esquerda e badge (ponto) à direita.
 _CSS_ATIVO = """
 .st-key-nav_active [data-testid="stPageLink-NavLink"] {
-    background: linear-gradient(135deg, rgba(99,102,241,.30), rgba(34,211,238,.10)) !important;
-    border-color: rgba(99,102,241,.45) !important;
+    background: linear-gradient(135deg, rgba(99,102,241,.28), rgba(34,211,238,.08)) !important;
+    border-color: rgba(99,102,241,.40) !important;
     position: relative;
 }
-.st-key-nav_active [data-testid="stPageLink-NavLink"] p { font-weight: 750; color: var(--text); }
+.st-key-nav_active [data-testid="stPageLink-NavLink"] p { font-weight: 700; }
+.st-key-nav_active [data-testid="stPageLink-NavLink"] [data-testid="stIconMaterial"] { color: var(--primary-soft) !important; }
 .st-key-nav_active [data-testid="stPageLink-NavLink"]::after {
+    /* badge de "tela atual" */
     content: ""; position: absolute; right: 14px; top: 50%;
-    width: 8px; height: 8px; margin-top: -4px; border-radius: 50%;
-    background: var(--accent); box-shadow: 0 0 0 4px rgba(34,211,238,.18);
-}
-.st-key-nav_active [data-testid="stPageLink-NavLink"]::before {
-    content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px;
-    width: 3px; border-radius: 3px; background: var(--primary-soft);
+    width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 4px rgba(34,211,238,.16);
 }
 /* "Recolher" só existe no desktop — no celular o menu já é uma gaveta. */
 @media (max-width: 767px) { .st-key-nav_recolher { display: none; } }
 """
 
-# Modo recolhido (desktop): trilho de 84px só com ícones.
+# Modo recolhido (desktop): trilho de 76px só com ícones.
 _CSS_COMPACTO = """
 @media (min-width: 768px) {
     [data-testid="stSidebar"], [data-testid="stSidebar"] > div {
-        width: 84px !important; min-width: 84px !important; max-width: 84px !important;
+        width: 76px !important; min-width: 76px !important; max-width: 76px !important;
     }
-    [data-testid="stSidebarUserContent"] { padding: 0 8px 16px; }
-    [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] { justify-content: center; padding: 0; }
-    [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] [data-testid="stMarkdownContainer"],
-    [data-testid="stSidebar"] .stSelectbox, .nav-section, .nav-who, .nav-sandbox,
-    .st-key-nav_active [data-testid="stPageLink-NavLink"]::after { display: none !important; }
-    [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] span { font-size: 1.25rem; }
-    .nav-head { padding: 4px 0; justify-content: center; background: none; border: none; }
-    [data-testid="stSidebar"] .stButton button { justify-content: center; padding: 0; }
-    .st-key-nav_recolher button p, .st-key-nav_sair button p { font-size: 0; }
-    .st-key-nav_recolher button p::first-letter, .st-key-nav_sair button p::first-letter { font-size: 1.2rem; }
     [data-testid="stSidebarCollapseButton"] { display: none; }
+    [data-testid="stSidebarUserContent"] { padding: 8px 10px 16px; }
+    [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"],
+    [data-testid="stSidebar"] .stButton button,
+    [data-testid="stSidebar"] .stButton button > div { justify-content: center; padding: 0; }
+    [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] [data-testid="stMarkdownContainer"],
+    [data-testid="stSidebar"] .stButton button [data-testid="stMarkdownContainer"],
+    [data-testid="stSidebar"] .stSelectbox, .nav-who, .nav-sandbox,
+    .st-key-nav_active [data-testid="stPageLink-NavLink"]::after { display: none !important; }
+    .nav-section { font-size: 0; padding: 6px 0 4px; }
+    .nav-head { padding: 0; justify-content: center; background: none; border: none; }
 }
 """
