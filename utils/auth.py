@@ -1,7 +1,9 @@
 """Portão de login por senha para proteger o app na web.
 
 A senha fica em `st.secrets["auth"]["password"]` (arquivo `.streamlit/secrets.toml`
-localmente e nos *Secrets* do Streamlit Cloud) — nunca no código nem no GitHub.
+localmente e nos *Secrets* do Streamlit Cloud) ou na variável de ambiente
+`AUTH_PASSWORD` (deploys self-hosted, ex: Coolify, sem suporte a secrets.toml) —
+nunca no código nem no GitHub.
 
 Uso: cada página chama `require_login()` logo após `setup_page(...)`. Enquanto a
 sessão não estiver autenticada, mostra o formulário de senha e interrompe a
@@ -29,9 +31,11 @@ def _modo_sandbox():
 def _senha_configurada():
     try:
         valor = st.secrets["auth"]["password"]
-        return str(valor) if valor else None
+        if valor:
+            return str(valor)
     except Exception:
-        return None
+        pass
+    return os.getenv("AUTH_PASSWORD") or None
 
 
 def require_login():
