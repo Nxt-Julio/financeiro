@@ -1,0 +1,267 @@
+/* Canvas de Alocação De/Para — nós estilo n8n.
+   As variáveis de cor (--bg, --surface, --receita, ...) são injetadas pelo
+   Python a partir de utils.ui.PALETTE (ver utils/fluxo.py). */
+
+:host { display: block; }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; }
+svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.fx-root { color: var(--text); font-size: 14px; container-type: inline-size; }
+
+/* ---------- dica ---------- */
+.fx-hint {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  color: var(--muted); font-size: .8rem; line-height: 1.35;
+}
+.fx-hint > svg { width: 22px; height: 22px; flex: none; color: var(--primary-soft); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 2px solid; vertical-align: -1px; }
+.dot-in { border-color: var(--receita); }
+.dot-out { border-color: var(--despesa); }
+
+/* ---------- canvas (grade pontilhada como no n8n) ---------- */
+.fx-canvas {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(52px, 16%, 170px) minmax(0, 1fr);
+  align-items: start;
+  padding: 14px 12px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background-color: rgba(14, 16, 22, .55);
+  background-image: radial-gradient(rgba(154, 161, 178, .16) 1px, transparent 1.2px);
+  background-size: 18px 18px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.fx-col { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fx-col-title {
+  margin: 0 0 2px; font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px;
+}
+.fx-col-out .fx-col-title { justify-content: flex-end; flex-direction: row-reverse; }
+.fx-empty {
+  padding: 18px 10px; border: 1px dashed var(--border); border-radius: 12px;
+  color: var(--muted); font-size: .8rem; text-align: center;
+}
+
+/* ---------- camadas ---------- */
+.fx-wires { position: absolute; inset: 0; z-index: 1; overflow: visible; pointer-events: none; }
+.fx-badges { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+
+/* ---------- nó ---------- */
+.fx-node {
+  position: relative;
+  padding: 10px 12px 11px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 6px 18px rgba(0,0,0,.28);
+  transition: border-color .15s, box-shadow .15s, opacity .15s, transform .15s;
+}
+.fx-node:hover { border-color: #3B4256; }
+.fx-node-head { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.fx-ico {
+  flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+}
+.fx-ico svg { width: 17px; height: 17px; stroke-width: 2.4; }
+.fx-receita .fx-ico { color: var(--receita); background: rgba(34,197,94,.14); box-shadow: 0 0 0 1px rgba(34,197,94,.3) inset; }
+.fx-despesa .fx-ico { color: var(--despesa); background: rgba(244,63,94,.13); box-shadow: 0 0 0 1px rgba(244,63,94,.3) inset; }
+.fx-node-tt { min-width: 0; flex: 1; }
+.fx-title {
+  font-weight: 700; font-size: .9rem; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;
+}
+.fx-meta { color: var(--muted); font-size: .72rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.fx-tag {
+  display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 999px;
+  font-size: .68rem; font-weight: 700; border: 1px solid transparent; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.tag-ok { color: #4ADE80; background: rgba(34,197,94,.14); border-color: rgba(34,197,94,.35); }
+.tag-parcial { color: #FBBF24; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.35); }
+.tag-pendente { color: #FB7185; background: rgba(244,63,94,.12); border-color: rgba(244,63,94,.35); }
+.tag-livre { color: #67E8F9; background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.35); }
+.tag-erro { color: #FFF; background: var(--despesa); }
+
+.fx-body { margin: 8px 0 0; display: grid; gap: 2px; }
+.fx-body > div { display: flex; justify-content: space-between; gap: 8px; font-size: .78rem; }
+.fx-body dt { color: var(--muted); }
+.fx-body dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fx-body .fx-v-total { font-weight: 800; }
+.fx-receita .fx-v-total { color: #4ADE80; }
+.fx-despesa .fx-v-total { color: #FB7185; }
+.fx-receita .fx-v-resto { color: var(--accent); }
+.fx-despesa .fx-v-resto { color: var(--alerta); }
+.fx-node.st-total .fx-v-resto { color: var(--muted); }
+
+.fx-bar { height: 4px; margin-top: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.fx-bar i { display: block; height: 100%; border-radius: 999px; background: var(--alerta); transition: width .35s ease; }
+.st-total .fx-bar i { background: var(--receita); }
+.st-excedido .fx-bar i { background: var(--despesa); }
+
+/* ---------- handles (ports) ---------- */
+.fx-handle {
+  position: absolute; top: 50%; z-index: 3;
+  width: 16px; height: 16px; padding: 0; border-radius: 50%;
+  border: 2.5px solid var(--muted); background: var(--bg);
+  transform: translate(-50%, -50%);
+  cursor: crosshair; touch-action: none;
+  transition: transform .15s ease, background .15s, border-color .15s, box-shadow .15s;
+}
+.fx-handle::before { content: ""; position: absolute; inset: -12px; border-radius: 50%; } /* alvo de toque ~40px */
+.fx-handle-out { left: 100%; border-color: var(--receita); }
+.fx-handle-in { left: 0; border-color: var(--despesa); }
+.fx-handle:hover, .fx-handle:focus-visible {
+  transform: translate(-50%, -50%) scale(1.35);
+  background: var(--primary); border-color: var(--primary-soft);
+  box-shadow: 0 0 0 4px rgba(99,102,241,.22); outline: none;
+}
+.fx-handle:active { transform: translate(-50%, -50%) scale(1.2); background: var(--accent); border-color: var(--accent); }
+.fx-node.is-full .fx-handle { border-color: var(--border); }
+
+/* ---------- conexão em andamento ---------- */
+.fx-canvas.is-wiring { cursor: crosshair; }
+.fx-node.is-source { border-color: var(--primary-soft); box-shadow: 0 0 0 3px rgba(99,102,241,.25), 0 6px 18px rgba(0,0,0,.28); }
+.fx-node.is-source .fx-handle { transform: translate(-50%, -50%) scale(1.35); background: var(--accent); border-color: var(--accent); }
+.fx-node.is-muted { opacity: .4; }
+.fx-node.is-target .fx-handle { animation: fx-pulse 1.1s ease-in-out infinite; }
+.fx-node.is-snap { border-color: var(--receita); box-shadow: 0 0 0 3px rgba(34,197,94,.25), 0 6px 18px rgba(0,0,0,.28); }
+.fx-node.is-snap .fx-handle { transform: translate(-50%, -50%) scale(1.55); background: var(--receita); border-color: #4ADE80; animation: none; }
+.fx-node.is-invalid { border-color: var(--despesa); opacity: .75; }
+.fx-node.is-invalid .fx-handle { background: var(--despesa); border-color: var(--despesa); }
+@keyframes fx-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); }
+  50% { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
+}
+.fx-node.is-shake { animation: fx-shake .35s ease; }
+@keyframes fx-shake {
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+
+/* ---------- arestas ---------- */
+.fx-edge-line {
+  fill: none; stroke: var(--primary-soft); stroke-width: 2.5; opacity: .85;
+  transition: stroke .15s, stroke-width .15s, opacity .15s;
+}
+.fx-edge-hit { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
+.fx-edge.is-on .fx-edge-line,
+.fx-edge.is-related .fx-edge-line {
+  stroke: var(--accent); stroke-width: 3.5; opacity: 1;
+  stroke-dasharray: 10 6; animation: fx-flow .7s linear infinite;
+}
+.fx-edge.is-pending .fx-edge-line { stroke-dasharray: 6 6; animation: fx-flow .5s linear infinite; opacity: .7; }
+@keyframes fx-flow { to { stroke-dashoffset: -16; } }
+
+.fx-temp { fill: none; stroke: var(--primary-soft); stroke-width: 2.5; stroke-dasharray: 7 6; animation: fx-flow .5s linear infinite; }
+.fx-temp.is-snap { stroke: var(--receita); stroke-width: 3; }
+.fx-temp.is-invalid { stroke: var(--despesa); }
+.fx-temp.is-hold { stroke: var(--accent); stroke-width: 3; }
+
+/* ---------- badge no meio da linha ---------- */
+.fx-badge {
+  position: absolute; transform: translate(-50%, -50%) scale(.85);
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  border-radius: 999px; background: var(--surface-2); border: 1px solid var(--accent);
+  box-shadow: 0 4px 14px rgba(0,0,0,.45);
+  opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s;
+  white-space: nowrap;
+}
+.fx-badge.is-on { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+.fx-badge button { border: 0; background: none; cursor: pointer; }
+.fx-badge-val { padding: 3px 8px; font-size: .74rem; font-weight: 700; color: var(--text); border-radius: 999px; font-variant-numeric: tabular-nums; }
+.fx-badge-val:hover { background: rgba(255,255,255,.06); }
+.fx-badge-x {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  color: #FFF; background: var(--despesa);
+}
+.fx-badge-x svg { width: 12px; height: 12px; stroke-width: 3; }
+.fx-badge-x:hover { filter: brightness(1.15); transform: scale(1.08); }
+
+/* ---------- popover de valor ---------- */
+.fx-pop {
+  position: absolute; z-index: 10; padding: 14px;
+  border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(99,102,241,.18);
+  opacity: 0; transform: translateY(-4px) scale(.98); transition: opacity .14s, transform .14s;
+  user-select: text; -webkit-user-select: text;
+}
+.fx-pop.is-open { opacity: 1; transform: none; }
+.fx-pop::before {
+  content: ""; position: absolute; top: -7px; left: var(--seta-x, 50%); width: 12px; height: 12px;
+  background: var(--surface); border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+  transform: translateX(-50%) rotate(45deg);
+}
+.fx-pop.seta-oculta::before { display: none; }
+.fx-pop-head { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+.fx-pop-ico { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--primary-soft); background: rgba(99,102,241,.16); }
+.fx-pop-ico svg { width: 15px; height: 15px; }
+.fx-pop-q { margin: 8px 0 8px; color: var(--muted); font-size: .8rem; line-height: 1.35; }
+.fx-pop-route { display: flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600; min-width: 0; }
+.fx-pop-route svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.fx-pop-route span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 6px; min-width: 0; }
+.fx-pop-in { color: #4ADE80; background: rgba(34,197,94,.12); }
+.fx-pop-out { color: #FB7185; background: rgba(244,63,94,.12); }
+.fx-pop-field {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0 12px;
+  height: 44px; border-radius: 10px; background: var(--bg); border: 1.5px solid var(--border);
+}
+.fx-pop-field:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.2); }
+.fx-pop-field.is-invalid { border-color: var(--despesa); }
+.fx-pop-field span { color: var(--muted); font-weight: 600; }
+.fx-pop-field input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text);
+  font: inherit; font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.fx-pop-quick { display: flex; gap: 6px; margin-top: 8px; }
+.fx-pop-quick button {
+  flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); font-size: .74rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.fx-pop-quick button:first-child { flex: 2.4; color: #4ADE80; border-color: rgba(34,197,94,.35); }
+.fx-pop-quick button:hover { filter: brightness(1.15); }
+.fx-pop-hint { margin-top: 8px; color: var(--muted); font-size: .72rem; }
+.fx-pop-hint b { color: var(--text); font-weight: 600; }
+.fx-pop-err { min-height: 1em; margin-top: 4px; color: #FB7185; font-size: .74rem; }
+.fx-pop-err:empty { display: none; }
+.fx-pop-actions { display: flex; gap: 8px; margin-top: 12px; }
+.fx-btn {
+  flex: 1; height: 40px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); font-weight: 700; cursor: pointer;
+}
+.fx-btn-primary { background: var(--primary); border-color: var(--primary); color: #FFF; }
+.fx-btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+.fx-btn:not(:disabled):hover { filter: brightness(1.1); }
+
+/* ---------- toast interno ---------- */
+.fx-toast {
+  /* fixo na tela: o canvas pode ser bem mais alto que a viewport */
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 1000;
+  max-width: min(420px, calc(100vw - 32px)); text-align: center;
+  padding: 8px 14px; border-radius: 10px; font-size: .8rem; font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--alerta); color: var(--text);
+  transform: translate(-50%, 8px); opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
+}
+.fx-toast.is-info { border-color: var(--primary-soft); }
+.fx-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- celular (largura do próprio canvas) ---------- */
+@container (max-width: 560px) {
+  .fx-canvas { padding: 12px 8px 16px; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); }
+  .fx-node { padding: 9px 10px 10px; }
+  .fx-node-head { gap: 7px; }
+  .fx-ico { width: 24px; height: 24px; border-radius: 7px; }
+  .fx-ico svg { width: 14px; height: 14px; }
+  .fx-title { font-size: .82rem; }
+  .fx-meta { font-size: .68rem; }
+  .fx-body > div { font-size: .72rem; flex-wrap: wrap; column-gap: 4px; }
+  .fx-handle { width: 18px; height: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-edge-line, .fx-temp, .fx-node, .fx-handle { animation: none !important; transition: none !important; }
+}
