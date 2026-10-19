@@ -1,6 +1,6 @@
 """Importação única de PDFs: o usuário só arrasta o arquivo; o sistema identifica
-se é holerite ou fatura de cartão (utils/document_detector.py), lê os valores e
-mostra tudo pronto para conferir e salvar. Quando não consegue identificar,
+se é holerite, fatura do cartão ou extrato da conta (utils/document_detector.py),
+lê os valores e mostra tudo pronto para conferir e salvar. Quando não consegue identificar,
 pergunta do que se trata o PDF.
 
 Substitui as antigas páginas "Leitura de Holerite" e "Leitura de Extrato".
@@ -21,14 +21,21 @@ from database import (
     inserir_transacao,
     inserir_transacoes_lote,
 )
-from utils.document_detector import TIPOS_DOCUMENTO, detectar_tipo, ler_como, sugerir_responsavel
+from utils.document_detector import (
+    SITUACOES,
+    TIPOS_DOCUMENTO,
+    classificar_lancamentos,
+    detectar_tipo,
+    ler_como,
+    sugerir_responsavel,
+)
 from utils.statement_parser import aplicar_regra_categoria, extrair_texto_pdf
 from utils.ui import PALETTE, _fmt_brl, kpi_row, page_header
 
 page_header(
     "Importar PDF",
-    "Arraste o holerite ou a fatura do cartão: o sistema identifica o tipo, lê os valores "
-    "e você só confere e salva.",
+    "Arraste o holerite, a fatura do cartão ou o extrato da conta: o sistema identifica "
+    "o tipo, lê os valores e você só confere e salva.",
     "📥",
 )
 
@@ -39,7 +46,7 @@ arquivos = st.file_uploader(
 )
 
 if not arquivos:
-    st.caption("Tipos reconhecidos: 📄 holerite (contracheque) e 📑 fatura/extrato de cartão (Nubank).")
+    st.caption("Tipos reconhecidos: 📄 holerite (contracheque), 💳 fatura do cartão e 🏦 extrato da conta (Nubank).")
     st.stop()
 
 responsaveis = get_responsaveis()
@@ -134,56 +141,94 @@ def form_holerite(estado, dados, chave):
         st.rerun()
 
 
-# ---------- Fatura ----------
-def form_fatura(estado, transacoes, chave):
+# ---------- Fatura do cartão / extrato da conta ----------
+MOTIVOS = {
+    "importado": "já importado — está no sistema",
+    "fatura": "pagamento de fatura — as compras já entram pela fatura do cartão",
+    "interno": "entre vocês / contas próprias — não é ganho nem gasto",
+    "duplicado": "possível duplicado — mesmo valor de um lançamento já cadastrado a até 7 dias (ex: parcela)",
+}
+
+
+def form_lancamentos(estado, dados, chave, documento):
+    """Tabela de conferência para a fatura (só saídas, vão para um cartão) e
+    para o extrato da conta (entradas e saídas, origem "Conta")."""
+    eh_extrato = documento == "extrato_conta"
+    transacoes = dados["transacoes"] if eh_extrato else dados
+    titular = dados["titular"] if eh_extrato else estado["texto"]
+
     regras = fetch_regras()
-    # Lançamentos iguais (data + valor + descrição) já gravados vêm desmarcados,
-    # para reimportar a mesma fatura sem duplicar.
-    existentes = {
-        (str(t["data"])[:10], round(float(t["valor"]), 2), (t["descricao_original"] or "").strip().lower())
-        for t in fetch_transacoes() if t["tipo"] == "despesa"
-    }
-    linhas = []
-    for t in transacoes:
-        duplicado = (t["data"].isoformat(), round(t["valor"], 2), t["descricao_original"].strip().lower()) in existentes
-        linhas.append({
-            "Importar": not duplicado,
+    situacoes = classificar_lancamentos(
+        transacoes,
+        fetch_transacoes(),
+        # Fatura: só compras, nenhuma é "entre vocês"; extrato: Pix do casal/contas próprias.
+        set(responsaveis) | {dados["titular"]} if eh_extrato else set(),
+        janela_dias=7 if eh_extrato else None,
+    )
+    df = pd.DataFrame([
+        {
+            "Importar": situacao == "novo",
             "Data": t["data"],
+            "Tipo": t.get("tipo", "despesa"),
             "Descrição": t["descricao_original"],
             "Categoria": aplicar_regra_categoria(t["descricao_original"], regras) or "",
             "Valor": t["valor"],
-            "Situação": "Já importado" if duplicado else "Novo",
-        })
-    df = pd.DataFrame(linhas)
+            "Situação": SITUACOES[situacao],
+            "_estab": t.get("estabelecimento") or t["descricao_original"],
+        }
+        for t, situacao in zip(transacoes, situacoes)
+    ])
 
-    n_dup = int((df["Situação"] == "Já importado").sum())
-    st.markdown(_md(
-        f"**{len(df)} lançamentos** · total {_fmt_brl(df['Valor'].sum())} · "
-        f"{df['Data'].min().strftime('%d/%m/%Y')} a {df['Data'].max().strftime('%d/%m/%Y')}"
-    ))
-    if n_dup == len(df):
-        st.info("Todos os lançamentos desta fatura já estão no sistema — nada novo para importar.")
-    elif n_dup:
-        st.info(f"{n_dup} lançamento(s) já estavam no sistema e vieram desmarcados.")
-    if df["Descrição"].str.contains(r"Parcela \d+/\d+", case=False).any():
+    entradas = df.loc[df["Tipo"] == "receita", "Valor"].sum()
+    saidas = df.loc[df["Tipo"] == "despesa", "Valor"].sum()
+    periodo = f"{df['Data'].min().strftime('%d/%m/%Y')} a {df['Data'].max().strftime('%d/%m/%Y')}"
+    if eh_extrato:
+        confere = (dados["total_entradas"] is not None and dados["total_saidas"] is not None
+                   and abs(entradas - dados["total_entradas"]) < 0.01 and abs(saidas - dados["total_saidas"]) < 0.01)
+        st.markdown(_md(
+            f"**{len(df)} movimentações** · {periodo} · entradas **{_fmt_brl(entradas)}** · "
+            f"saídas **{_fmt_brl(saidas)}**" + (" · ✔ confere com o resumo do extrato" if confere else "")
+        ))
+        if not confere:
+            st.warning("Os totais lidos não batem com o resumo do extrato — confira se faltou alguma linha.")
+    else:
+        st.markdown(_md(f"**{len(df)} lançamentos** · total {_fmt_brl(saidas)} · {periodo}"))
+
+    contagem = {c: situacoes.count(c) for c in MOTIVOS if situacoes.count(c)}
+    if contagem and len(contagem) == 1 and contagem.get("importado") == len(df):
+        st.info("Todos os lançamentos deste arquivo já estão no sistema — nada novo para importar.")
+    elif contagem:
+        st.info("Vieram **desmarcados** (marque se quiser importar mesmo assim):\n" + "\n".join(
+            f"- **{n}** × {MOTIVOS[c]}" for c, n in contagem.items()
+        ))
+    if not eh_extrato and df["Descrição"].str.contains(r"Parcela \d+/\d+", case=False).any():
         st.caption("⚠️ Há compras parceladas. Se alguma já estiver cadastrada em **Parcelamentos**, "
                    "desmarque-a aqui para não contar duas vezes.")
 
-    responsavel = _seletor_responsavel(estado["texto"], f"resp_{chave}")
-    cartoes = fetch_cartoes()
-    opcoes_cartao = {"— Nenhum —": None} | {c["nome"]: c["id"] for c in cartoes}
-    nome_cartao = st.selectbox(
-        "Cartão da fatura", list(opcoes_cartao), index=1 if cartoes else 0, key=f"cartao_{chave}",
-        disabled=not cartoes, help="Os lançamentos entram na fatura deste cartão (Contas & Cartões).",
-    )
+    responsavel = _seletor_responsavel(titular, f"resp_{chave}")
+    id_cartao = None
+    if not eh_extrato:
+        cartoes = fetch_cartoes()
+        opcoes_cartao = {"— Nenhum —": None} | {c["nome"]: c["id"] for c in cartoes}
+        nome_cartao = st.selectbox(
+            "Cartão da fatura", list(opcoes_cartao), index=1 if cartoes else 0, key=f"cartao_{chave}",
+            disabled=not cartoes, help="Os lançamentos entram na fatura deste cartão (Contas & Cartões).",
+        )
+        id_cartao = opcoes_cartao[nome_cartao]
+
     editado = st.data_editor(
         df,
         hide_index=True,
         use_container_width=True,
         num_rows="fixed",
+        column_order=["Importar", "Data", "Tipo", "Descrição", "Categoria", "Valor", "Situação"]
+        if eh_extrato else ["Importar", "Data", "Descrição", "Categoria", "Valor", "Situação"],
         column_config={
             "Importar": st.column_config.CheckboxColumn("Importar", width="small"),
             "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY", disabled=True),
+            "Tipo": st.column_config.SelectboxColumn(
+                "Tipo", options=["receita", "despesa"], width="small",
+                help="receita = entrou na conta · despesa = saiu da conta"),
             "Descrição": st.column_config.TextColumn("Descrição", disabled=True),
             "Categoria": st.column_config.TextColumn("Categoria", help="Sugerida pelas regras de categorização."),
             "Valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", disabled=True),
@@ -193,8 +238,11 @@ def form_fatura(estado, transacoes, chave):
     )
 
     selecionados = editado[editado["Importar"]]
+    sel_ent = selecionados.loc[selecionados["Tipo"] == "receita", "Valor"].sum()
+    sel_sai = selecionados.loc[selecionados["Tipo"] == "despesa", "Valor"].sum()
+    resumo = (f"+{_fmt_brl(sel_ent)} / −{_fmt_brl(sel_sai)}" if eh_extrato else _fmt_brl(sel_sai))
     if st.button(
-        f"Salvar {len(selecionados)} lançamento(s) · {_fmt_brl(selecionados['Valor'].sum())}",
+        _md(f"Salvar {len(selecionados)} lançamento(s) · {resumo}"),
         type="primary",
         use_container_width=True,
         disabled=selecionados.empty,
@@ -204,18 +252,18 @@ def form_fatura(estado, transacoes, chave):
             {
                 "data": linha["Data"].isoformat(),
                 "descricao_original": linha["Descrição"],
-                "estabelecimento": linha["Descrição"],
+                "estabelecimento": linha["_estab"],
                 "categoria": str(linha["Categoria"]).strip() or "Outros",
                 "valor": float(linha["Valor"]),
-                "tipo": "despesa",
+                "tipo": linha["Tipo"],
                 "responsavel": responsavel,
-                "origem": "Cartão",
-                "cartao_id": opcoes_cartao[nome_cartao],
+                "origem": "Conta" if eh_extrato else "Cartão",
+                "cartao_id": id_cartao,
             }
             for _, linha in selecionados.iterrows()
         ])
-        estado["salvo"] = (f"{len(selecionados)} lançamento(s) da fatura salvos para {responsavel} "
-                           f"({_fmt_brl(selecionados['Valor'].sum())}).")
+        estado["salvo"] = (f"{len(selecionados)} lançamento(s) {'do extrato' if eh_extrato else 'da fatura'} "
+                           f"salvos para {responsavel} ({resumo}).")
         st.rerun()
 
 
@@ -275,4 +323,4 @@ for arquivo in arquivos:
         if tipo == "holerite":
             form_holerite(estado, dados, chave)
         else:
-            form_fatura(estado, dados, chave)
+            form_lancamentos(estado, dados, chave, tipo)

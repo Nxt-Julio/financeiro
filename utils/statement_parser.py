@@ -187,15 +187,16 @@ def parse_transacoes(texto: str) -> list[dict]:
 
 
 def aplicar_regra_categoria(descricao: str, regras) -> str | None:
-    """Retorna a categoria destino da primeira regra cujo termo_busca está
-    contido (case-insensitive) na descrição informada, ou None se nenhuma
-    regra casar.
+    """Retorna a categoria destino da primeira regra cujo termo_busca aparece
+    como palavra inteira (case-insensitive) na descrição informada, ou None se
+    nenhuma regra casar. Palavra inteira para "Cooper" (mercado) não pegar
+    "Banco Cooperativo Sicoob".
 
     `regras` é uma lista de tuplas (termo_busca, categoria_destino) — mantém o
     parser desacoplado do banco (as regras são carregadas pela camada de dados).
     """
-    descricao_lower = descricao.lower()
     for termo_busca, categoria_destino in regras:
-        if termo_busca.lower() in descricao_lower:
+        termo = termo_busca.strip()
+        if termo and re.search(rf"(?<!\w){re.escape(termo)}(?!\w)", descricao, re.IGNORECASE):
             return categoria_destino
     return None
