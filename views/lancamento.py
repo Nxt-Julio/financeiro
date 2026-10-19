@@ -7,6 +7,7 @@ do shell) e botão de salvar fixo no rodapé (CSS em utils/ui.py)."""
 import datetime
 
 import streamlit as st
+from dateutil.relativedelta import relativedelta
 
 from database import (
     ORIGENS,
@@ -14,7 +15,7 @@ from database import (
     fetch_cartoes,
     fetch_categorias,
     get_responsaveis,
-    inserir_transacao,
+    inserir_transacoes_lote,
 )
 from utils.installments import gerar_parcelas
 from utils.ui import _fmt_brl, lista, md, page_header, row_card
@@ -47,22 +48,29 @@ def _origem_e_cartao(origem, nome_cartao):
 
 
 if modo == "avulso":
+    # O tipo fica FORA do formulário de propósito: com clear_on_submit ele
+    # voltaria para "Saída" a cada envio, e lançamentos seguidos de entrada
+    # (ex: salário de vários meses) acabavam gravados como despesa.
+    tipo = st.segmented_control("Tipo", ["despesa", "receita"], default="despesa", required=True,
+                                format_func=lambda t: "💸 Saída" if t == "despesa" else "💚 Entrada",
+                                key="lanc_tipo", width="stretch")
+    eh_receita = tipo == "receita"
+    nome_tipo = "entrada" if eh_receita else "saída"
     with st.form("form_lancamento", clear_on_submit=True):
-        tipo = st.segmented_control("Tipo", ["despesa", "receita"], default="despesa", required=True,
-                                    format_func=lambda t: "💸 Saída" if t == "despesa" else "💚 Entrada",
-                                    width="stretch")
         valor = st.number_input("Valor (R$)", min_value=0.0, step=1.0, format="%.2f", value=None,
                                 placeholder="0,00")
-        descricao = st.text_input("Descrição", placeholder="Ex: Feira da semana")
+        descricao = st.text_input("Descrição", placeholder="Ex: Salário" if eh_receita else "Ex: Feira da semana")
         categoria = st.selectbox("Categoria", categorias, index=None, accept_new_options=True,
                                  placeholder="Escolha ou digite uma nova")
         data = st.date_input("Data", value=datetime.date.today(), format="DD/MM/YYYY")
+        repetir = st.number_input("Repetir por quantos meses", min_value=1, max_value=36, step=1, value=1,
+                                  help="Cria o mesmo lançamento todo mês a partir da data — ex: salário, aluguel.")
         responsavel = st.selectbox("Responsável", responsaveis)
-        origem = st.selectbox("Origem", ORIGENS)
-        nome_cartao = st.selectbox("Cartão (opcional)", list(opcoes_cartao), disabled=not cartoes,
+        origem = st.selectbox("Origem", ORIGENS, index=ORIGENS.index("Conta") if eh_receita else 0)
+        nome_cartao = st.selectbox("Cartão (opcional)", list(opcoes_cartao), disabled=not cartoes or eh_receita,
                                    help="Escolher um cartão coloca o lançamento na fatura dele.")
         estabelecimento = st.text_input("Estabelecimento (opcional)", placeholder="Ex: Feira Livre")
-        enviar = st.form_submit_button("Salvar lançamento", use_container_width=True)
+        enviar = st.form_submit_button(f"Salvar {nome_tipo}", use_container_width=True)
 
     if enviar:
         if not valor:
@@ -73,19 +81,26 @@ if modo == "avulso":
             st.error("Informe a categoria.")
         else:
             origem, cartao_id = _origem_e_cartao(origem, nome_cartao)
-            inserir_transacao(
-                data=data.isoformat(),
-                descricao_original=descricao.strip(),
-                estabelecimento=estabelecimento.strip() or None,
-                categoria=categoria.strip(),
-                valor=float(valor),
-                tipo=tipo,
-                responsavel=responsavel,
-                origem=origem,
-                cartao_id=cartao_id,
-            )
-            st.session_state["lanc_flash"] = (f"{'Entrada' if tipo == 'receita' else 'Saída'} de "
-                                              f"{_fmt_brl(valor)} registrada: {descricao.strip()}.")
+            if eh_receita:
+                cartao_id = None  # entrada nunca entra em fatura de cartão
+            meses = int(repetir)
+            inserir_transacoes_lote([
+                {
+                    "data": (data + relativedelta(months=i)).isoformat(),
+                    "descricao_original": descricao.strip(),
+                    "estabelecimento": estabelecimento.strip() or None,
+                    "categoria": categoria.strip(),
+                    "valor": float(valor),
+                    "tipo": tipo,
+                    "responsavel": responsavel,
+                    "origem": origem,
+                    "cartao_id": cartao_id,
+                }
+                for i in range(meses)
+            ])
+            repeticao = f" por {meses} meses" if meses > 1 else ""
+            st.session_state["lanc_flash"] = (f"{nome_tipo.capitalize()} de {_fmt_brl(valor)}{repeticao} "
+                                              f"registrada: {descricao.strip()}.")
             st.rerun()
 
 else:
