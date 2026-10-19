@@ -11,6 +11,7 @@ Neon/Supabase). A URL de conexão é resolvida nesta ordem:
 As telas do app não precisam saber qual banco está em uso — elas chamam apenas as
 funções públicas deste módulo.
 """
+import datetime
 import os
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     create_engine,
     delete,
     func,
@@ -35,6 +37,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
+
+from utils.allocation import TOLERANCIA
 
 DEFAULT_RESPONSAVEIS = ["Marido", "Esposa"]
 ORIGENS = ["Dinheiro", "Cartão", "Conta"]
@@ -144,6 +148,26 @@ transacoes = Table(
     Column("id_parcelamento", Integer, ForeignKey("parcelamentos.id_origem")),
     Column("pago", Boolean, nullable=False, default=False),
 )
+
+# Alocação financeira (vínculo De/Para): destina parte de uma receita para cobrir
+# uma despesa. Relação N:N entre transações — uma receita pode ser dividida entre
+# várias despesas e uma despesa pode ser coberta por várias receitas. Há no
+# máximo um vínculo por par (receita, despesa); "vincular de novo" o mesmo par
+# substitui o valor (ver salvar_alocacao).
+alocacoes = Table(
+    "alocacoes",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("receita_id", Integer, ForeignKey("transacoes.id", ondelete="CASCADE"), nullable=False, index=True),
+    Column("despesa_id", Integer, ForeignKey("transacoes.id", ondelete="CASCADE"), nullable=False, index=True),
+    Column("valor", Float, nullable=False),
+    Column("criado_em", Text, nullable=False),
+    UniqueConstraint("receita_id", "despesa_id", name="uq_alocacao_par"),
+)
+
+
+class AlocacaoInvalida(ValueError):
+    """Vínculo recusado por regra de negócio (mensagem pronta para exibir)."""
 
 
 def _migrar_coluna_pago():
@@ -277,12 +301,23 @@ def atualizar_transacao(id_transacao, campos):
     if not permitidos:
         return
     with engine.begin() as conn:
+        # Se o tipo mudou, os vínculos do papel antigo deixam de fazer sentido
+        # (ex: uma "receita" que virou "despesa" não pode mais cobrir nada).
+        if permitidos.get("tipo") == "despesa":
+            conn.execute(delete(alocacoes).where(alocacoes.c.receita_id == id_transacao))
+        elif permitidos.get("tipo") == "receita":
+            conn.execute(delete(alocacoes).where(alocacoes.c.despesa_id == id_transacao))
         conn.execute(update(transacoes).where(transacoes.c.id == id_transacao).values(**permitidos))
 
 
 def excluir_transacao(id_transacao):
-    """Remove uma transação pelo id."""
+    """Remove uma transação pelo id (e os vínculos de alocação dela)."""
     with engine.begin() as conn:
+        conn.execute(
+            delete(alocacoes).where(
+                (alocacoes.c.receita_id == id_transacao) | (alocacoes.c.despesa_id == id_transacao)
+            )
+        )
         conn.execute(delete(transacoes).where(transacoes.c.id == id_transacao))
 
 
@@ -401,3 +436,87 @@ def fetch_regras():
             select(regras_categorizacao.c.termo_busca, regras_categorizacao.c.categoria_destino)
         ).all()
     return [(termo, categoria) for termo, categoria in rows]
+
+
+# ---------------------------------------------------------------------------
+# Alocações (vínculo De/Para receita -> despesa)
+# ---------------------------------------------------------------------------
+def fetch_alocacoes():
+    """Todos os vínculos: id, receita_id, despesa_id, valor, criado_em."""
+    with engine.connect() as conn:
+        rows = conn.execute(select(alocacoes).order_by(alocacoes.c.id)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def salvar_alocacao(receita_id, despesa_id, valor):
+    """Cria o vínculo receita -> despesa ou, se o par já estiver vinculado,
+    substitui o valor alocado. Valida tudo dentro de uma única transação de banco:
+
+    - a receita é do tipo "receita" e a despesa é do tipo "despesa";
+    - o valor é positivo;
+    - não ultrapassa o saldo livre da receita nem o que falta cobrir da despesa
+      (desconsiderando o valor atual do próprio par, já que ele será substituído).
+
+    Levanta AlocacaoInvalida com uma mensagem amigável se alguma regra falhar.
+    """
+    from utils.ui import _fmt_brl
+
+    valor = round(float(valor), 2)
+    if valor <= 0:
+        raise AlocacaoInvalida("O valor alocado deve ser maior que zero.")
+
+    with engine.begin() as conn:
+        # FOR UPDATE trava as duas transações no Postgres enquanto validamos,
+        # evitando que dois vínculos simultâneos estourem o saldo (no SQLite a
+        # cláusula é ignorada — lá a escrita já é serializada).
+        linhas = conn.execute(
+            select(transacoes.c.id, transacoes.c.tipo, transacoes.c.valor, transacoes.c.descricao_original)
+            .where(transacoes.c.id.in_([receita_id, despesa_id]))
+            .with_for_update()
+        ).mappings().all()
+        por_id = {linha["id"]: linha for linha in linhas}
+        receita, despesa = por_id.get(receita_id), por_id.get(despesa_id)
+        if receita is None or receita["tipo"] != "receita":
+            raise AlocacaoInvalida("A origem do vínculo precisa ser uma receita existente.")
+        if despesa is None or despesa["tipo"] != "despesa":
+            raise AlocacaoInvalida("O destino do vínculo precisa ser uma despesa existente.")
+
+        mesmo_par = (alocacoes.c.receita_id == receita_id) & (alocacoes.c.despesa_id == despesa_id)
+
+        def _ja_alocado(coluna, id_transacao):
+            return conn.execute(
+                select(func.coalesce(func.sum(alocacoes.c.valor), 0.0))
+                .where(coluna == id_transacao, ~mesmo_par)
+            ).scalar()
+
+        livre = round(receita["valor"] - _ja_alocado(alocacoes.c.receita_id, receita_id), 2)
+        restante = round(despesa["valor"] - _ja_alocado(alocacoes.c.despesa_id, despesa_id), 2)
+        if valor > livre + TOLERANCIA:
+            raise AlocacaoInvalida(
+                f"Valor maior que o saldo livre da receita \"{receita['descricao_original']}\" "
+                f"({_fmt_brl(max(livre, 0))})."
+            )
+        if valor > restante + TOLERANCIA:
+            raise AlocacaoInvalida(
+                f"Valor maior que o que falta cobrir da despesa \"{despesa['descricao_original']}\" "
+                f"({_fmt_brl(max(restante, 0))})."
+            )
+
+        existente = conn.execute(select(alocacoes.c.id).where(mesmo_par)).scalar()
+        if existente is None:
+            conn.execute(
+                insert(alocacoes).values(
+                    receita_id=receita_id,
+                    despesa_id=despesa_id,
+                    valor=valor,
+                    criado_em=datetime.datetime.now().isoformat(timespec="seconds"),
+                )
+            )
+        else:
+            conn.execute(update(alocacoes).where(alocacoes.c.id == existente).values(valor=valor))
+
+
+def remover_alocacao(id_alocacao):
+    """Desfaz um vínculo (as transações originais não são tocadas)."""
+    with engine.begin() as conn:
+        conn.execute(delete(alocacoes).where(alocacoes.c.id == id_alocacao))

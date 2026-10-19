@@ -66,6 +66,7 @@ st.subheader("Módulos")
 SECOES = [
     ("🧾", "Parcelamentos", "Registre compras parceladas e gere as parcelas futuras automaticamente.", "pages/1_Parcelamentos.py"),
     ("📊", "Visão Geral", "Distribuição de despesas por categoria e lista de transações.", "pages/2_Visao_Geral.py"),
+    ("🔗", "Alocação De/Para", "Destine cada receita às despesas que ela vai cobrir.", "pages/9_Alocacao.py"),
     ("🗂️", "Gerenciar Lançamentos", "Edite categorias e campos, ou exclua lançamentos.", "pages/8_Gerenciar_Lancamentos.py"),
     ("✍️", "Lançamento Manual", "Registre receitas e despesas avulsas em dinheiro.", "pages/3_Lancamento_Manual.py"),
     ("📄", "Leitura de Holerite", "Importe o holerite em PDF e lance o salário líquido.", "pages/4_Leitura_Holerite.py"),

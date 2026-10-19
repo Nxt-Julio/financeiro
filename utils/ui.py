@@ -175,6 +175,25 @@ a.nav-card:hover {{ transform: translateY(-3px); border-color: {PALETTE['primary
 [data-testid="stSidebarNav"] a[aria-current="page"] span {{ font-weight: 700; color: {PALETTE['text']}; }}
 [data-testid="stSidebarNav"] a span {{ font-size: .93rem; }}
 
+/* ---------- Cards de alocação (De/Para) ---------- */
+.aloc-head {{ display: flex; justify-content: space-between; align-items: flex-start; gap: .6rem; }}
+.aloc-title {{ font-weight: 700; font-size: 1rem; line-height: 1.3; color: {PALETTE['text']}; word-break: break-word; }}
+.aloc-meta {{ color: {PALETTE['muted']}; font-size: .8rem; margin-top: .15rem; }}
+.aloc-bar {{ height: 8px; border-radius: 999px; background: {PALETTE['border']}; overflow: hidden; margin: .75rem 0 .6rem; }}
+.aloc-bar > div {{ height: 100%; border-radius: 999px; }}
+.aloc-nums {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }}
+.aloc-nums span {{ display: block; color: {PALETTE['muted']}; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }}
+.aloc-nums b {{ font-size: .95rem; }}
+.aloc-links {{ margin: .7rem 0 0; padding: .55rem .7rem; border-radius: 10px; background: {PALETTE['surface_2']}; font-size: .82rem; }}
+.aloc-links div {{ display: flex; justify-content: space-between; gap: .6rem; padding: .12rem 0; }}
+.aloc-links div span:first-child {{ color: {PALETTE['muted']}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.tag {{ display: inline-block; white-space: nowrap; padding: .18rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 700; border: 1px solid transparent; }}
+.tag-ok {{ color: #4ADE80; background: rgba(34,197,94,.14); border-color: rgba(34,197,94,.35); }}
+.tag-parcial {{ color: #FBBF24; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.35); }}
+.tag-pendente {{ color: #FB7185; background: rgba(244,63,94,.12); border-color: rgba(244,63,94,.35); }}
+.tag-livre {{ color: #67E8F9; background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.35); }}
+.tag-erro {{ color: #FFF; background: {PALETTE['despesa']}; }}
+
 /* Divisor sutil */
 hr {{ border-color: {PALETTE['border']}; }}
 

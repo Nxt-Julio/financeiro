@@ -24,12 +24,14 @@ import database as db  # noqa: E402
 LOCAL_DB_PATH = Path(__file__).parent.parent / "finance.db"
 
 # Ordem importa: parcelamentos precisa existir antes de transacoes por causa
-# do id_parcelamento (FK). regras_categorizacao/configuracoes não têm FK.
+# do id_parcelamento (FK), e transacoes antes de alocacoes (FKs receita/despesa).
+# regras_categorizacao/configuracoes não têm FK.
 TABELAS_EM_ORDEM = [
     db.regras_categorizacao,
     db.configuracoes,
     db.parcelamentos,
     db.transacoes,
+    db.alocacoes,
 ]
 
 
